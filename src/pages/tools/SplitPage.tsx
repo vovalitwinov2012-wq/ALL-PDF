@@ -24,8 +24,8 @@ export function SplitPage() {
       const idx = parsePageRanges(ranges, doc.getPageCount());
       const out = await splitPdf(bytes, mode, idx);
       setResult(out);
-    } catch {
-      setError('split-failed');
+    } catch (e) {
+      setError(t((e as Error).message === 'empty-result' ? 'splitPage.empty' : 'failed') as string);
     } finally {
       setBusy(false);
     }

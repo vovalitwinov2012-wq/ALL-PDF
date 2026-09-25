@@ -13,10 +13,12 @@ export function ViewerPage() {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const open = async (f: File) => {
     setFile(f);
     setBusy(true);
+    setError(null);
     try {
       const buf = await f.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
@@ -38,6 +40,9 @@ export function ViewerPage() {
       }
       setUrls(out);
       setHits(found);
+    } catch {
+      setUrls([]);
+      setError(t('failed') as string);
     } finally {
       setBusy(false);
     }
@@ -47,6 +52,7 @@ export function ViewerPage() {
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('viewerPage.title')}</h1>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => open(f[0])} />
+      {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex items-center gap-2">
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('viewerPage.searchPh') as string}
           className="w-full rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-900" />

@@ -9,14 +9,18 @@ export function CompressPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
 
   const run = async () => {
     if (!file) return;
     setBusy(true);
+    setError(null);
     try {
       const out = await compressPdf(new Uint8Array(await file.arrayBuffer()));
       setResult(out);
+    } catch {
+      setError(t('failed') as string);
     } finally {
       setBusy(false);
     }
@@ -35,6 +39,7 @@ export function CompressPage() {
       <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
         {busy ? t('processing') : t('compressPage.do')}
       </button>
+      {error && <p className="text-sm text-red-500">{error}</p>}
       <p className="text-xs text-slate-500">{t('compressPage.note')}</p>
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="compressed.pdf" />}
     </div>

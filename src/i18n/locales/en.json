@@ -31,6 +31,8 @@
   "tooManyFiles": "Too many files (max 20).",
   "fileTooBig": "File exceeds 50 MB — split or compress it first.",
   "needFiles": "Add files first.",
+  "failed": "Could not process the file. Make sure it's a valid PDF.",
+  "wrongType": "This file type doesn't fit this tool — pick another file.",
   "tools": {
     "viewer": { "name": "View PDF", "desc": "Fast viewer, zoom, search, thumbnails" },
     "merge": { "name": "Merge PDF", "desc": "Multiple PDFs into one, order and pages" },
@@ -71,7 +73,8 @@
     "extract": "Extract pages",
     "delete": "Delete pages",
     "rotate": "Rotate all (90°)",
-    "do": "Run"
+    "do": "Run",
+    "empty": "No pages match these ranges. Check the numbers."
   },
   "compressPage": {
     "title": "Compress PDF",
@@ -89,6 +92,7 @@
     "format": "Format",
     "scale": "Quality (scale)",
     "resultText": "Extracted text",
+    "noText": "No text found — this looks like a scan without a text layer. Try the “OCR: scan → text” tool.",
     "truncated": "Showing the first {{n}} pages — that is the preview limit.",
     "unsupportedFormat": "HEIC and TIFF are not supported locally yet. Convert them to JPG/PNG on your phone and try again."
   },
@@ -124,6 +128,7 @@
     "title": "Signature",
     "hint": "Draw with mouse or finger, then place into the PDF.",
     "clearSign": "Clear signature",
+    "drawFirst": "Draw your signature on the canvas above first.",
     "place": "Place into PDF"
   },
   "protectPage": {

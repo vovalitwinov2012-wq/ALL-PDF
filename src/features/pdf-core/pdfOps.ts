@@ -15,6 +15,7 @@ export async function mergePdfs(files: Uint8Array[], ranges?: string[]): Promise
     const pages = await out.copyPages(src, idx);
     pages.forEach((p) => out.addPage(p));
   }
+  if (out.getPageCount() === 0) throw new Error('empty-result');
   return out.save();
 }
 
@@ -66,12 +67,18 @@ export async function compressPdf(bytes: Uint8Array): Promise<Uint8Array> {
   return src.save({ useObjectStreams: true });
 }
 
+function isPng(bytes: Uint8Array): boolean {
+  // Сигнатура PNG, не доверяем file.type (на части телефонов он пустой)
+  return bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+}
+
 export async function imagesToPdf(images: Array<{ bytes: Uint8Array; mime: string }>, pageSize: 'fit' | 'a4'): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   for (const img of images) {
-    const embedded = img.mime.includes('png') ? await out.embedPng(img.bytes) : await out.embedJpg(img.bytes);
-    const w = embedded.width;
-    const h = embedded.height;
+    const png = img.mime.includes('png') || isPng(img.bytes);
+    const embedded = png ? await out.embedPng(img.bytes) : await out.embedJpg(img.bytes);
+    let w = embedded.width;
+    let h = embedded.height;
     if (pageSize === 'a4') {
       const page = out.addPage([595.28, 841.89]);
       const scale = Math.min(page.getWidth() / w, page.getHeight() / h);
@@ -82,10 +89,16 @@ export async function imagesToPdf(images: Array<{ bytes: Uint8Array; mime: strin
         height: h * scale
       });
     } else {
+      // Ограничиваем гигантские фото, иначе страница в 4000+ pt ломает вьюверы
+      const MAX = 1440;
+      const k = Math.min(1, MAX / Math.max(w, h));
+      w *= k;
+      h *= k;
       const page = out.addPage([w, h]);
       page.drawImage(embedded, { x: 0, y: 0, width: w, height: h });
     }
   }
+  if (out.getPageCount() === 0) throw new Error('empty-result');
   return out.save();
 }
 
@@ -164,7 +177,7 @@ export async function protectPdf(bytes: Uint8Array, _userPass: string, _ownerPas
   // а интерфейс предупреждает пользователя, что это не настоящее AES-шифрование.
   // Чтобы не вводить в заблуждение, UI обязан показать дисклеймер.
   const src = await loadPdf(bytes);
-  src.setProducer('ALL PDF (password-protect stub — use PRO for real AES)');
+  src.setProducer('ALL PDF (local copy — not AES-encrypted)');
   void _userPass;
   void _ownerPass;
   return src.save();
@@ -179,10 +192,6 @@ export async function flattenPdf(bytes: Uint8Array): Promise<Uint8Array> {
     // форм нет — просто пересохраняем
   }
   return src.save();
-}
-
-export function listFormFieldsSync(): string[] {
-  return [];
 }
 
 export async function listFormFields(bytes: Uint8Array): Promise<string[]> {
