@@ -1,0 +1,47 @@
+{
+  "name": "all-pdf",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ALL PDF — бесплатный локальный PWA-комбайн для работы с PDF",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:pages": "npm run build && node scripts/pages-fallback.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "deploy": "gh-pages -d dist"
+  },
+  "dependencies": {
+    "file-saver": "^2.0.5",
+    "framer-motion": "^11.2.10",
+    "i18next": "^23.11.5",
+    "i18next-browser-languagedetector": "^7.2.0",
+    "idb-keyval": "^6.2.1",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.424.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.2.67",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-dropzone": "^14.2.3",
+    "react-i18next": "^14.1.2",
+    "react-router-dom": "^6.23.1",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/file-saver": "^2.0.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "gh-pages": "^6.1.1",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.6",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.8",
+    "vite-plugin-pwa": "^0.20.5",
+    "vitest": "^2.0.5"
+  }
+}

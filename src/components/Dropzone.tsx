@@ -1,0 +1,26 @@
+import { useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { useTranslation } from 'react-i18next';
+import { UploadCloud } from 'lucide-react';
+import { cn } from '../lib/utils';
+
+export function Dropzone({ accept, multiple = true, onFiles }: { accept?: Record<string, string[]>; multiple?: boolean; onFiles: (f: File[]) => void }) {
+  const { t } = useTranslation();
+  const onDrop = useCallback((accepted: File[]) => onFiles(accepted), [onFiles]);
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept, multiple });
+
+  return (
+    <div
+      {...getRootProps()}
+      className={cn(
+        'cursor-pointer rounded-2xl border-2 border-dashed border-indigo-200 bg-white/70 p-8 text-center transition dark:border-indigo-900 dark:bg-slate-900/60',
+        isDragActive && 'dropzone-active'
+      )}
+    >
+      <input {...getInputProps()} />
+      <UploadCloud className="mx-auto mb-3 h-10 w-10 text-indigo-500" />
+      <p className="font-semibold">{t('dropTitle')}</p>
+      <p className="mt-1 text-sm text-slate-500">{t('dropSubtitle')}</p>
+    </div>
+  );
+}

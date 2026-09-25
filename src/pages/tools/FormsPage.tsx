@@ -1,0 +1,56 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Dropzone } from '../../components/Dropzone';
+import { ResultCard } from '../../components/ResultCard';
+import { flattenPdf, listFormFields } from '../../features/pdf-core/pdfOps';
+
+export function FormsPage() {
+  const { t } = useTranslation();
+  const [file, setFile] = useState<File | null>(null);
+  const [fields, setFields] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Uint8Array | null>(null);
+
+  const inspect = async (f: File) => {
+    setFile(f);
+    setResult(null);
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    setFields(await listFormFields(bytes));
+  };
+
+  const flatten = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      setResult(await flattenPdf(new Uint8Array(await file.arrayBuffer())));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      <h1 className="text-2xl font-extrabold">{t('formsPage.title')}</h1>
+      <p className="text-sm text-slate-500">{t('formsPage.hint')}</p>
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => inspect(f[0])} />
+      {fields !== null && (
+        <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+          {fields.length === 0 ? (
+            <p className="text-slate-500">{t('formsPage.noFields')}</p>
+          ) : (
+            <>
+              <p className="mb-2 font-semibold">{t('formsPage.foundFields', { n: fields.length })}</p>
+              <ul className="thin-scroll max-h-48 list-disc space-y-1 overflow-auto pl-5">
+                {fields.map((f) => <li key={f}>{f}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+      <button onClick={flatten} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
+        {busy ? t('processing') : t('formsPage.flatten')}
+      </button>
+      {result && <ResultCard title={t('ready') as string} bytes={result} fileName="flattened.pdf" />}
+    </div>
+  );
+}

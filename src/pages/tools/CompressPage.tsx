@@ -1,0 +1,42 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Dropzone } from '../../components/Dropzone';
+import { ResultCard } from '../../components/ResultCard';
+import { formatBytes } from '../../lib/utils';
+import { compressPdf } from '../../features/pdf-core/pdfOps';
+
+export function CompressPage() {
+  const { t } = useTranslation();
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Uint8Array | null>(null);
+
+  const run = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const out = await compressPdf(new Uint8Array(await file.arrayBuffer()));
+      setResult(out);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      <h1 className="text-2xl font-extrabold">{t('compressPage.title')}</h1>
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => { setFile(f[0]); setResult(null); }} />
+      {file && (
+        <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+          {t('was')}: <b>{formatBytes(file.size)}</b>
+          {result && <> → {t('became')}: <b>{formatBytes(result.length)}</b> (−{Math.max(0, Math.round((1 - result.length / file.size) * 100))}%)</>}
+        </div>
+      )}
+      <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
+        {busy ? t('processing') : t('compressPage.do')}
+      </button>
+      <p className="text-xs text-slate-500">{t('compressPage.note')}</p>
+      {result && <ResultCard title={t('ready') as string} bytes={result} fileName="compressed.pdf" />}
+    </div>
+  );
+}
