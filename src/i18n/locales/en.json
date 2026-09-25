@@ -1,5 +1,4 @@
 {
-  "appName": "ALL PDF",
   "tagline": "Every PDF tool in one app",
   "subtitle": "Merge, split, compress, convert, recognize and sign. Free forever and 100% local — files never leave your device.",
   "localBadge": "100% local • no server",
@@ -33,6 +32,8 @@
   "needFiles": "Add files first.",
   "failed": "Could not process the file. Make sure it's a valid PDF.",
   "wrongType": "This file type doesn't fit this tool — pick another file.",
+  "remove": "Remove",
+  "cappedFiles": "Taking the first {{n}} files — that is the limit.",
   "tools": {
     "viewer": { "name": "View PDF", "desc": "Fast viewer, zoom, search, thumbnails" },
     "merge": { "name": "Merge PDF", "desc": "Multiple PDFs into one, order and pages" },
@@ -57,7 +58,7 @@
     "offlineTitle": "Works offline",
     "offlineText": "Install it as an app (PWA) — tools stay available without internet.",
     "limitsTitle": "Honest limits",
-    "limitsText": "Files up to 50 MB and up to 20 at a time, OCR up to 10 pages, PDF preview up to 20/50 pages. Language models download on first recognition. True AES password encryption is not available locally yet — the UI warns about it honestly.",
+    "limitsText": "Files up to 50 MB. Per run: up to 20 PDFs, up to 50 photos, OCR up to 10 files and 20 images, preview 20/50 pages. Language models download on first recognition. True AES password encryption is not available locally yet — the UI warns about it honestly.",
     "cta": "To the tools"
   },
   "mergePage": {
@@ -105,6 +106,10 @@
     "both": "Rus + Eng",
     "do": "Recognize",
     "loading": "Loading engine and models…",
+    "stCore": "Loading engine…",
+    "stLang": "Loading language models…",
+    "stInit": "Warming up…",
+    "preparing": "Preparing pages…",
     "recognizing": "Recognizing",
     "capped": "Taking the first {{n}} images — that is the per-run limit.",
     "failed": "Recognition failed. Check the files and connection (models download on first run)."

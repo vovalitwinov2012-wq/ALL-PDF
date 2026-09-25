@@ -22,6 +22,7 @@ export function SignPage() {
   const clear = () => {
     const c = canvasRef.current!;
     c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
+    setResult(null);
   };
 
   const isBlank = () => {
@@ -60,7 +61,7 @@ export function SignPage() {
         ref={canvasRef}
         width={640}
         height={220}
-        className="w-full touch-none rounded-2xl border-2 border-dashed border-indigo-300 bg-white dark:bg-slate-900"
+        className="w-full touch-none rounded-2xl border-2 border-dashed border-indigo-300 bg-white dark:border-indigo-700"
         onPointerDown={(e) => { setDrawing(true); setResult(null); (e.target as HTMLElement).setPointerCapture(e.pointerId); const p = pos(e); canvasRef.current!.getContext('2d')!.beginPath(); canvasRef.current!.getContext('2d')!.moveTo((p.x / canvasRef.current!.getBoundingClientRect().width) * 640, (p.y / canvasRef.current!.getBoundingClientRect().height) * 220); }}
         onPointerMove={(e) => {
           if (!drawing) return;
@@ -77,7 +78,7 @@ export function SignPage() {
       <div className="flex gap-2">
         <button onClick={clear} className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold dark:bg-slate-800">{t('signPage.clearSign')}</button>
       </div>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => {
         if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
         setError(null);
         setFile(f[0]);

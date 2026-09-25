@@ -16,6 +16,18 @@ interface OcrResult {
 const MAX_OCR_PAGES = 10;
 const MAX_IMAGES = 20;
 
+// Часть браузеров отдает пустой file.type — определяем PDF и по расширению
+function isPdfFile(f: File): boolean {
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+}
+
+function mapStatus(t: (k: string) => unknown, s: string): string {
+  if (s.includes('language')) return t('ocr.stLang') as string;
+  if (s.includes('initializing') || s.includes('initialized') || s.includes('loaded')) return t('ocr.stInit') as string;
+  if (s.includes('recognizing')) return t('ocr.recognizing') as string;
+  return t('ocr.stCore') as string;
+}
+
 async function pdfPagesToImages(file: File): Promise<Array<{ name: string; blob: Blob }>> {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buf }).promise;
@@ -71,15 +83,16 @@ export function OcrPage() {
       setStatus(t('ocr.loading') as string);
       const worker = await createWorker(langs, undefined, {
         logger: (m: { status: string; progress: number }) => {
-          if (typeof m.progress === 'number') setProgress(m.progress);
-          setStatus(m.status);
+          if (m.status === 'recognizing text' && typeof m.progress === 'number') setProgress(m.progress);
+          setStatus(mapStatus(t, m.status));
         }
       });
 
       // Собираем картинки: фото напрямую, PDF постранично
+      setStatus(t('ocr.preparing') as string);
       let images: Array<{ name: string; blob: Blob }> = [];
       for (const f of files.slice(0, MAX_OCR_PAGES)) {
-        if (f.type === 'application/pdf') {
+        if (isPdfFile(f)) {
           images.push(...(await pdfPagesToImages(f)));
         } else {
           images.push({ name: f.name, blob: f });
@@ -126,18 +139,20 @@ export function OcrPage() {
 
       <Dropzone
         accept={{ 'application/pdf': ['.pdf'], 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.bmp'] }}
+        disabled={busy}
         onFiles={add}
       />
       {note && <p className="text-sm text-amber-600">{note}</p>}
-      <FileList files={files} onRemove={(i) => setFiles((p) => p.filter((_, x) => x !== i))} onClear={() => { setFiles([]); setResults([]); }} />
+      <FileList files={files} onRemove={(i) => { setFiles((p) => p.filter((_, x) => x !== i)); setResults([]); }} onClear={() => { setFiles([]); setResults([]); }} />
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('ocr.language')}:</span>
         {(['rus', 'eng', 'both'] as const).map((l) => (
           <button
             key={l}
+            disabled={busy}
             onClick={() => { setLang(l); setResults([]); }}
-            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
+            className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.${l}`) as string}
           </button>

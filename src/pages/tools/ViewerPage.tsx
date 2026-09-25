@@ -63,7 +63,7 @@ export function ViewerPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('viewerPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => open(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => open(f[0])} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('viewerPage.searchPh') as string}

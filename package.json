@@ -14,11 +14,8 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
-    "file-saver": "^2.0.5",
-    "framer-motion": "^11.2.10",
     "i18next": "^23.11.5",
     "i18next-browser-languagedetector": "^7.2.0",
-    "idb-keyval": "^6.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.424.0",
     "pdf-lib": "^1.17.1",
@@ -31,7 +28,6 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
-    "@types/file-saver": "^2.0.7",
     "@types/node": "^26.6.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

@@ -42,6 +42,7 @@ export function Home() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t('searchTools') as string}
+            aria-label={t('searchTools') as string}
             className="w-full bg-transparent outline-none"
           />
         </div>

@@ -31,10 +31,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // Тяжелые WASM/ML-модели — только lazy, не прекэшируем
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        // OCR-модели Tesseract: скачать один раз, дальше работать оффлайн
+        // OCR: движок, WASM-ядро и языковые модели грузятся с jsdelivr —
+        // кэшируем один раз, дальше OCR работает оффлайн
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/tessdata\.projectnaptha\.com\/.*/i,
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tesseract\.js-data\/.*/i,
             handler: 'CacheFirst',
             options: { cacheName: 'tessdata', expiration: { maxEntries: 30, maxAgeSeconds: 90 * 24 * 3600 } }
           },

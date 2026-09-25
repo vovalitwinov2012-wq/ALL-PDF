@@ -34,7 +34,7 @@ export function SplitPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('splitPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => {
         if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
         setError(null);
         setFile(f[0]);
@@ -45,14 +45,14 @@ export function SplitPage() {
         <label className="text-sm font-semibold">{t('splitPage.mode')}</label>
         <div className="mt-2 flex gap-2">
           {(['extract', 'delete', 'rotate'] as const).map((m) => (
-            <button key={m} onClick={() => { setMode(m); setResult(null); }}
-              className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${mode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+            <button key={m} disabled={busy} onClick={() => { setMode(m); setResult(null); }}
+              className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${mode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
               {t(`splitPage.${m}`) as string}
             </button>
           ))}
         </div>
         {mode !== 'rotate' && (
-          <input value={ranges} onChange={(e) => { setRanges(e.target.value); setResult(null); }} placeholder={t('rangesPh') as string}
+          <input value={ranges} disabled={busy} onChange={(e) => { setRanges(e.target.value); setResult(null); }} placeholder={t('rangesPh') as string}
             className="mt-3 w-full rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
         )}
         <button onClick={run} disabled={busy} className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">

@@ -5,6 +5,11 @@ import { ResultCard } from '../../components/ResultCard';
 import { formatBytes, isTooBig } from '../../lib/utils';
 import { compressPdf } from '../../features/pdf-core/pdfOps';
 
+function deltaText(before: number, after: number): string {
+  const p = Math.round((1 - after / before) * 100);
+  return (p >= 0 ? '−' : '+') + Math.abs(p) + '%';
+}
+
 export function CompressPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
@@ -29,7 +34,7 @@ export function CompressPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('compressPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => {
         if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
         setError(null);
         setFile(f[0]);
@@ -38,7 +43,7 @@ export function CompressPage() {
       {file && (
         <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
           {t('was')}: <b>{formatBytes(file.size)}</b>
-          {result && <> → {t('became')}: <b>{formatBytes(result.length)}</b> (−{Math.max(0, Math.round((1 - result.length / file.size) * 100))}%)</>}
+          {result && <> → {t('became')}: <b>{formatBytes(result.length)}</b> ({deltaText(file.size, result.length)})</>}
         </div>
       )}
       <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">

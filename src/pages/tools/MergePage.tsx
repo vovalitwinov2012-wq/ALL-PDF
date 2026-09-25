@@ -74,7 +74,7 @@ export function MergePage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('mergePage.title')}</h1>
       <p className="text-sm text-slate-500">{t('mergePage.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} onFiles={addFiles} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} disabled={busy} onFiles={addFiles} />
 
       {items.length > 0 && (
         <div className="space-y-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -100,7 +100,7 @@ export function MergePage() {
                   <button onClick={() => move(item.id, 1)} disabled={pos === items.length - 1} aria-label={t('moveDown') as string} className="rounded-lg p-1 hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-slate-700">
                     <ArrowDown className="h-4 w-4" />
                   </button>
-                  <button onClick={() => { setResult(null); setItems((p) => p.filter((x) => x.id !== item.id)); }} aria-label="remove" className="rounded-lg p-1 text-slate-400 hover:text-red-500">
+                  <button onClick={() => { setResult(null); setItems((p) => p.filter((x) => x.id !== item.id)); }} aria-label={t('remove') as string} className="rounded-lg p-1 text-slate-400 hover:text-red-500">
                     <X className="h-4 w-4" />
                   </button>
                 </div>

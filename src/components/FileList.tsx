@@ -28,7 +28,7 @@ export function FileList({ files, onRemove, onClear, onMove }: {
                 <button onClick={() => onMove(i, 1)} disabled={i === files.length - 1} aria-label={t('moveDown') as string} className="text-slate-400 hover:text-indigo-500 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
               </>
             )}
-            <button onClick={() => onRemove(i)} aria-label="remove" className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
+            <button onClick={() => onRemove(i)} aria-label={t('remove') as string} className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
           </li>
         ))}
       </ul>

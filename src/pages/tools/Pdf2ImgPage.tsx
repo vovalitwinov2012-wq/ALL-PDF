@@ -84,16 +84,16 @@ export function Pdf2ImgPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('convertPage.pdf2imgTitle')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => pick(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => pick(f[0])} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('convertPage.format')}:</span>
         {(['jpeg', 'png'] as const).map((f) => (
-          <button key={f} onClick={() => { setFormat(f); touch(); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${format === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{f}</button>
+          <button key={f} disabled={busy} onClick={() => { setFormat(f); touch(); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${format === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{f}</button>
         ))}
         <span className="ml-2 text-sm font-semibold">{t('convertPage.scale')}:</span>
         {[1, 2, 3].map((s) => (
-          <button key={s} onClick={() => { setScale(s); touch(); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{s}x</button>
+          <button key={s} disabled={busy} onClick={() => { setScale(s); touch(); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{s}x</button>
         ))}
         <button onClick={run} disabled={!file || busy} className="ml-auto rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? t('processing') : t('convertPage.do')}

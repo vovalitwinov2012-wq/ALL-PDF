@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
-import { flattenPdf, listFormFields } from '../../features/pdf-core/pdfOps';
+import { flattenPdf, listFormFields, loadPdf } from '../../features/pdf-core/pdfOps';
 import { isTooBig } from '../../lib/utils';
 
 export function FormsPage() {
@@ -23,8 +23,16 @@ export function FormsPage() {
     setError(null);
     setFile(f);
     setResult(null);
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    setFields(await listFormFields(bytes));
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      // garbage.pdf переименованным мусором давал «полей нет» — проверяем, что это вообще PDF
+      await loadPdf(bytes);
+      setFields(await listFormFields(bytes));
+    } catch {
+      setFile(null);
+      setFields(null);
+      setError(t('failed') as string);
+    }
   };
 
   const flatten = async () => {
@@ -44,7 +52,7 @@ export function FormsPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('formsPage.title')}</h1>
       <p className="text-sm text-slate-500">{t('formsPage.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => inspect(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => inspect(f[0])} />
       {fields !== null && (
         <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
           {fields.length === 0 ? (

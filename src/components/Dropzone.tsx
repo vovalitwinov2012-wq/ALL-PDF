@@ -4,7 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { UploadCloud } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-export function Dropzone({ accept, multiple = true, onFiles }: { accept?: Record<string, string[]>; multiple?: boolean; onFiles: (f: File[]) => void }) {
+export function Dropzone({ accept, multiple = true, disabled = false, onFiles }: {
+  accept?: Record<string, string[]>;
+  multiple?: boolean;
+  disabled?: boolean;
+  onFiles: (f: File[]) => void;
+}) {
   const { t } = useTranslation();
   const [rejected, setRejected] = useState(false);
   const onDrop = useCallback((accepted: File[]) => {
@@ -15,7 +20,8 @@ export function Dropzone({ accept, multiple = true, onFiles }: { accept?: Record
     onDrop,
     onDropRejected: () => setRejected(true),
     accept,
-    multiple
+    multiple,
+    disabled
   });
 
   return (
@@ -23,7 +29,8 @@ export function Dropzone({ accept, multiple = true, onFiles }: { accept?: Record
       {...getRootProps()}
       className={cn(
         'cursor-pointer rounded-2xl border-2 border-dashed border-indigo-200 bg-white/70 p-8 text-center transition dark:border-indigo-900 dark:bg-slate-900/60',
-        isDragActive && 'dropzone-active'
+        isDragActive && 'dropzone-active',
+        disabled && 'cursor-wait opacity-60'
       )}
     >
       <input {...getInputProps()} />

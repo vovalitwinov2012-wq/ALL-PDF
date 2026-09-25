@@ -11,4 +11,9 @@ describe('ranges', () => {
   it('ignores garbage', () => {
     expect(parseRangesToIndices('abc,,2', 5)).toEqual([1]);
   });
+  it('supports open-ended ranges', () => {
+    expect(parseRangesToIndices('-3', 10)).toEqual([0, 1, 2]);
+    expect(parseRangesToIndices('8-', 10)).toEqual([7, 8, 9]);
+    expect(parseRangesToIndices('-', 10)).toEqual([]);
+  });
 });

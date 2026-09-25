@@ -29,8 +29,8 @@ if not exist "node_modules" (
 )
 
 echo [2/2] Запускаю ALL PDF...
-echo       Адрес: http://localhost:5173/ALL-PDF/
-echo       Браузер откроется сам. Для остановки закройте это окно или нажмите Ctrl+C.
+echo       Браузер откроется сам на адрес из строки Local ниже.
+echo       Для остановки закройте это окно или нажмите Ctrl+C.
 echo.
 
 call npm run dev -- --port 5173 --open

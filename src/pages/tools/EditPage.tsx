@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
@@ -29,6 +29,7 @@ export function EditPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
+  const openSeq = useRef(0);
 
   // Настройки изменились — показанный ранее результат им уже не соответствует
   useEffect(() => {
@@ -38,13 +39,16 @@ export function EditPage() {
 
   const open = async (f: File) => {
     if (isTooBig(f)) return setError(t('fileTooBig') as string);
+    const seq = ++openSeq.current;
     setFile(f);
     setResult(null);
     setError(null);
     try {
       const doc = await loadPdf(new Uint8Array(await f.arrayBuffer()));
+      if (openSeq.current !== seq) return; // пока грузился, выбрали другой файл
       setPageCount(doc.getPageCount());
     } catch {
+      if (openSeq.current !== seq) return;
       setPageCount(null);
     }
   };
@@ -79,7 +83,7 @@ export function EditPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('editPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => open(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => open(f[0])} />
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <label className="text-sm font-semibold">{t('editPage.text')}</label>

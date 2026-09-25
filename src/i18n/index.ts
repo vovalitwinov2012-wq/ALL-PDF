@@ -15,6 +15,7 @@ void i18n
     fallbackLng: 'ru',
     supportedLngs: ['ru', 'en'],
     interpolation: { escapeValue: false },
+    react: { useSuspense: false },
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage']
@@ -24,7 +25,6 @@ void i18n
 // Синхронизируем <html lang> с выбранным языком — важно для скринридеров и SEO
 i18n.on('languageChanged', (lng) => {
   document.documentElement.lang = lng;
-  localStorage.setItem('allpdf-lang', lng);
 });
 
 export default i18n;

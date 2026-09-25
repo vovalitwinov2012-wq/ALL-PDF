@@ -42,7 +42,7 @@ export function Pdf2TextPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('convertPage.pdf2textTitle')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => {
         if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
         setError(null);
         setEmpty(false);
