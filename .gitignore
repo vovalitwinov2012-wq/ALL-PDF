@@ -3,3 +3,5 @@ dist
 *.local
 tsconfig.tsbuildinfo
 *.traineddata
+brand/
+promo/

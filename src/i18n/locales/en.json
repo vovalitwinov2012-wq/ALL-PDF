@@ -109,7 +109,7 @@
     "unsupportedFormat": "HEIC and TIFF are not supported locally yet. Convert them to JPG/PNG on your phone and try again."
   },
   "ocr": {
-    "title": "OCR: scan → text",
+    "title": "OCR: scan → text & PDF",
     "hint": "Upload photos, scans or a PDF. Recognition runs right in the browser. Language models (~15–30 MB, internet needed) download on first run, then it works offline. Max 10 files at a time.",
     "language": "Language",
     "rus": "Russian",
