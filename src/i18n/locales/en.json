@@ -36,17 +36,24 @@
   "cappedFiles": "Taking the first {{n}} files — that is the limit.",
   "tools": {
     "viewer": { "name": "View PDF", "desc": "Fast viewer, zoom, search, thumbnails" },
-    "merge": { "name": "Merge PDF", "desc": "Multiple PDFs into one, order and pages" },
-    "split": { "name": "Split / pages", "desc": "Extract, delete, rotate pages" },
+    "merge": { "name": "Merge PDF & photos", "desc": "PDFs and images into one, order and pages" },
+    "split": { "name": "Split / pages", "desc": "Extract, delete, rotate, chunk to ZIP" },
+    "organizer": { "name": "Page organizer", "desc": "Thumbnails: rotate, delete, drag to reorder" },
     "compress": { "name": "Compress PDF", "desc": "Shrink size without losing content" },
     "img2pdf": { "name": "Photos → PDF", "desc": "Shots and images into one PDF, camera included" },
     "pdf2img": { "name": "PDF → images", "desc": "Pages to JPG/PNG, single ZIP download" },
     "pdf2text": { "name": "PDF → text", "desc": "Extract text to TXT" },
-    "ocr": { "name": "OCR: scan → text", "desc": "Recognize Russian and English scans" },
-    "edit": { "name": "Editor", "desc": "Text, watermark, numbers, metadata" },
-    "forms": { "name": "Forms", "desc": "List fields and flatten forms" },
+    "ocr": { "name": "OCR: scan → text/PDF", "desc": "Scan recognition + searchable PDF" },
+    "images": { "name": "Images from PDF", "desc": "Extract embedded pictures to ZIP" },
+    "edit": { "name": "Editor", "desc": "Text, stamps, Bates, watermark, metadata" },
+    "shapes": { "name": "Shapes & markup", "desc": "Rectangles, arrows, highlighter, redaction" },
+    "crop": { "name": "Crop margins", "desc": "Trim white borders and scan edges" },
+    "repair": { "name": "Repair PDF", "desc": "Rebuild a broken file" },
+    "compare": { "name": "Compare PDFs", "desc": "Two versions: what changed" },
+    "tables": { "name": "Tables to CSV", "desc": "Pull tables from a report (beta)" },
+    "forms": { "name": "Forms", "desc": "Fill fields, flatten the document" },
     "sign": { "name": "Sign", "desc": "Draw a signature and place into PDF" },
-    "protect": { "name": "Protect", "desc": "Password mark, metadata cleanup" }
+    "protect": { "name": "AES protection", "desc": "Real encryption, password removal" }
   },
   "about": {
     "title": "About",
@@ -58,12 +65,12 @@
     "offlineTitle": "Works offline",
     "offlineText": "Install it as an app (PWA) — tools stay available without internet.",
     "limitsTitle": "Honest limits",
-    "limitsText": "Files up to 50 MB. Per run: up to 20 PDFs, up to 50 photos, OCR up to 10 files and 20 images, preview 20/50 pages. Language models download on first recognition. True AES password encryption is not available locally yet — the UI warns about it honestly.",
+    "limitsText": "Files up to 50 MB. Per run: up to 20 PDFs, up to 50 photos, OCR up to 10 files and 20 images, preview 20/50/100 pages. Language models download on first recognition. Encryption is real AES-128/256.",
     "cta": "To the tools"
   },
   "mergePage": {
-    "title": "Merge PDF",
-    "hint": "Add files, set the order with arrows and optionally pick pages per file. An empty field means the whole file.",
+    "title": "Merge PDF & photos",
+    "hint": "Add PDFs and images, set the order with arrows and optionally pick pages per PDF. An empty field means the whole file.",
     "doMerge": "Merge",
     "badFile": "One of the files does not look like a PDF — remove it from the list.",
     "failed": "Merge failed. Make sure the files are valid PDFs."
@@ -74,6 +81,10 @@
     "extract": "Extract pages",
     "delete": "Delete pages",
     "rotate": "Rotate all (90°)",
+    "singles": "Every page → file (ZIP)",
+    "chunks": "Every N pages (ZIP)",
+    "everyN": "Pages per chunk:",
+    "zipNote": "Chunks download as a single ZIP.",
     "do": "Run",
     "empty": "No pages match these ranges. Check the numbers."
   },
@@ -99,7 +110,7 @@
   },
   "ocr": {
     "title": "OCR: scan → text",
-    "hint": "Upload photos, scans or a PDF. Recognition runs right in the browser. Language models (~15–30 MB, internet needed) download on first run, then it works offline. Max 10 pages at a time.",
+    "hint": "Upload photos, scans or a PDF. Recognition runs right in the browser. Language models (~15–30 MB, internet needed) download on first run, then it works offline. Max 10 files at a time.",
     "language": "Language",
     "rus": "Russian",
     "eng": "English",
@@ -111,6 +122,9 @@
     "stInit": "Warming up…",
     "preparing": "Preparing pages…",
     "recognizing": "Recognizing",
+    "output": "Output",
+    "out_txt": "Text (.txt)",
+    "out_pdf": "Searchable PDF",
     "capped": "Taking the first {{n}} images — that is the per-run limit.",
     "failed": "Recognition failed. Check the files and connection (models download on first run)."
   },
@@ -129,6 +143,16 @@
     "position": "Position",
     "size": "Size",
     "allPagesNote": "Watermark and page numbers go on all pages.",
+    "stamp_agreed": "APPROVED",
+    "stamp_copy": "COPY",
+    "stamp_secret": "CONFIDENTIAL",
+    "stamp_draft": "DRAFT",
+    "stamp_paid": "PAID",
+    "batesTitle": "Bates numbering",
+    "prefix": "Prefix",
+    "startFrom": "Start from",
+    "pad": "Zeroes",
+    "addBates": "Number pages",
     "failed": "Could not apply. Check the page number."
   },
   "signPage": {
@@ -139,13 +163,24 @@
     "place": "Place into PDF"
   },
   "protectPage": {
-    "title": "Protect PDF",
-    "hint": "Set a password mark and fully remove hidden metadata.",
-    "userPass": "Password",
-    "doProtect": "Set password",
+    "title": "Protect PDF (AES)",
+    "hint": "Real AES-128/256 encryption, password removal and metadata cleanup. All local.",
+    "encryptTitle": "Encrypt",
+    "userPass": "Open password",
+    "ownerPass": "Owner password (optional)",
+    "restrict": "Forbid copying, printing and changes",
+    "doProtect": "Encrypt",
+    "decryptTitle": "Remove password",
+    "curPass": "Current password",
+    "doDecrypt": "Decrypt",
+    "needPass": "Enter a password.",
+    "loadingEngine": "Loading crypto engine…",
+    "encDone": "File encrypted — save it with the button above.",
+    "decDone": "Password removed — save the file with the button above.",
+    "encFailed": "Encryption failed. Check the file.",
+    "decFailed": "Decryption failed. Check the password and file.",
     "sanitize": "Clear metadata",
-    "sanitizeDone": "Metadata cleared — save the file with the button above.",
-    "stubNote": "Honest note: true AES encryption is not available locally, the file is only marked. For strict protection use the metadata cleanup above or desktop Acrobat/qpdf. Real encryption will come in future versions."
+    "sanitizeDone": "Metadata cleared — save the file with the button above."
   },
   "viewerPage": {
     "title": "View PDF",
@@ -155,9 +190,75 @@
   },
   "formsPage": {
     "title": "PDF forms",
-    "hint": "See the list of form fields and flatten the document so content cannot be changed accidentally.",
-    "flatten": "Flatten forms",
+    "hint": "Fill form fields right in the browser and download the finished document.",
+    "flatten": "Only flatten (no filling)",
+    "fill": "Fill and download",
+    "flattenAfter": "Flatten after filling",
+    "unsupported": "This field type is not supported",
     "noFields": "No form fields found — this is a regular PDF without interactive fields.",
     "foundFields": "Fields found: {{n}}"
+  },
+  "organizer": {
+    "title": "Page organizer",
+    "hint": "Click to select, drag to reorder. Rotate or delete the selection, then save.",
+    "truncated": "Showing the first {{n}} pages.",
+    "selected": "Selected: {{n}} of {{total}}",
+    "rotate": "Rotate",
+    "delete": "Delete",
+    "restore": "Restore deleted",
+    "save": "Save all",
+    "extractSel": "Extract selected",
+    "deleted": "deleted"
+  },
+  "images": {
+    "title": "Images from PDF",
+    "hint": "Pull embedded pictures: JPEG as is, the rest as PNG.",
+    "empty": "No embedded images found."
+  },
+  "crop": {
+    "title": "Crop margins",
+    "hint": "Trim white borders and scan edges. Values are points (72 pt = 1 inch).",
+    "margins": "Margins to crop",
+    "top": "Top",
+    "right": "Right",
+    "bottom": "Bottom",
+    "left": "Left",
+    "pagesPh": "Pages (empty = all)",
+    "do": "Crop"
+  },
+  "repair": {
+    "title": "Repair PDF",
+    "hint": "Rebuild the file's internal structure. Helps with open errors and truncated downloads.",
+    "failed": "Repair failed — the file is damaged beyond recovery."
+  },
+  "compare": {
+    "title": "Compare PDFs",
+    "hint": "Upload two versions of a document — see line-by-line differences.",
+    "needTwo": "Upload both files.",
+    "do": "Compare",
+    "hideSame": "Hide matches",
+    "truncated": "Comparing the first {{n}} pages.",
+    "summary": "Lines added: {{added}}, removed: {{removed}}",
+    "page": "Page {{n}}"
+  },
+  "tables": {
+    "title": "Tables to CSV (beta)",
+    "hint": "Heuristic for simple reports: rows and columns are guessed from coordinates. Eyeball the result.",
+    "result": "Tables",
+    "empty": "No table-like text found."
+  },
+  "shapes": {
+    "title": "Shapes & markup",
+    "hint": "Draw with mouse or finger right on the page. Shapes are burned into the PDF on save.",
+    "tool_rect": "Rectangle",
+    "tool_ellipse": "Ellipse",
+    "tool_line": "Line",
+    "tool_arrow": "Arrow",
+    "tool_highlight": "Highlighter",
+    "tool_redact": "Redaction",
+    "undo": "Undo last",
+    "clear": "Clear page",
+    "apply": "Save to PDF (shapes: {{n}})",
+    "redactNote": "Redaction is visual: a black rectangle is burned on top, but the source text underneath stays in the file. For legally binding removal use desktop tools."
   }
 }

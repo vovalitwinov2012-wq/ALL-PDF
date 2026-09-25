@@ -1,4 +1,4 @@
-import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, degrees, rgb, StandardFonts, PDFTextField, PDFCheckBox, PDFRadioGroup, PDFDropdown } from 'pdf-lib';
 
 export async function loadPdf(bytes: Uint8Array): Promise<PDFDocument> {
   return PDFDocument.load(bytes, { ignoreEncryption: true });
@@ -202,6 +202,82 @@ export async function listFormFields(bytes: Uint8Array): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export interface FormFieldInfo {
+  name: string;
+  type: 'text' | 'check' | 'radio' | 'select' | 'unknown';
+  value: string;
+  checked: boolean;
+  options: string[];
+  multiline: boolean;
+}
+
+/** Подробности полей для UI заполнения. XFA/отсутствующие формы → []. */
+export async function getFormFields(bytes: Uint8Array): Promise<FormFieldInfo[]> {
+  try {
+    const src = await loadPdf(bytes);
+    const form = src.getForm();
+    return form.getFields().map((f) => {
+      const name = f.getName();
+      if (f instanceof PDFTextField) {
+        return { name, type: 'text', value: f.getText() ?? '', checked: false, options: [], multiline: f.isMultiline() };
+      }
+      if (f instanceof PDFCheckBox) {
+        return { name, type: 'check', value: '', checked: f.isChecked(), options: [], multiline: false };
+      }
+      if (f instanceof PDFRadioGroup) {
+        return { name, type: 'radio', value: f.getSelected() ?? '', checked: false, options: f.getOptions(), multiline: false };
+      }
+      if (f instanceof PDFDropdown) {
+        const sel = f.getSelected();
+        return { name, type: 'select', value: Array.isArray(sel) ? sel[0] ?? '' : sel ?? '', checked: false, options: f.getOptions(), multiline: false };
+      }
+      return { name, type: 'unknown', value: '', checked: false, options: [], multiline: false };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export type FieldValue = { text?: string; checked?: boolean; select?: string };
+
+/** Заполнить форму значениями. flatten=true — сплющить после заполнения. */
+export async function fillForm(
+  bytes: Uint8Array,
+  values: Record<string, FieldValue>,
+  flatten = false
+): Promise<Uint8Array> {
+  const src = await loadPdf(bytes);
+  const form = src.getForm();
+  for (const field of form.getFields()) {
+    const v = values[field.getName()];
+    if (!v) continue;
+    try {
+      if (field instanceof PDFTextField && v.text !== undefined) field.setText(v.text);
+      else if (field instanceof PDFCheckBox && v.checked !== undefined) {
+        if (v.checked) field.check();
+        else field.uncheck();
+      } else if (field instanceof PDFRadioGroup && v.select) field.select(v.select);
+      else if (field instanceof PDFDropdown && v.select) field.select(v.select);
+    } catch {
+      // отдельное кривое поле не должно ронять всё заполнение
+    }
+  }
+  try {
+    const font = await src.embedFont(StandardFonts.Helvetica);
+    form.updateFieldAppearances(font);
+  } catch {
+    // старые формы без виджетов — пропускаем
+  }
+  if (flatten) {
+    try {
+      form.flatten();
+    } catch {
+      // ignore
+    }
+  }
+  return src.save();
 }
 
 export async function placeSignature(bytes: Uint8Array, pngBytes: Uint8Array): Promise<Uint8Array> {

@@ -1,18 +1,25 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Search, Eye, Combine, Scissors, Archive, ImagePlus, Images, Type, ScanText, PenLine, ClipboardList, PenTool, ShieldCheck } from 'lucide-react';
+import { Search, Eye, Combine, Scissors, Layers, Archive, ImagePlus, Images, Type, ScanText, FileImage, PenLine, Shapes, Crop, Wrench, GitCompare, Table, ClipboardList, PenTool, ShieldCheck } from 'lucide-react';
 
 const TOOLS = [
   { to: '/viewer', icon: Eye, key: 'viewer' },
   { to: '/merge', icon: Combine, key: 'merge' },
   { to: '/split', icon: Scissors, key: 'split' },
+  { to: '/organizer', icon: Layers, key: 'organizer' },
   { to: '/compress', icon: Archive, key: 'compress' },
   { to: '/img2pdf', icon: ImagePlus, key: 'img2pdf' },
   { to: '/pdf2img', icon: Images, key: 'pdf2img' },
   { to: '/pdf2text', icon: Type, key: 'pdf2text' },
   { to: '/ocr', icon: ScanText, key: 'ocr' },
+  { to: '/images', icon: FileImage, key: 'images' },
   { to: '/edit', icon: PenLine, key: 'edit' },
+  { to: '/shapes', icon: Shapes, key: 'shapes' },
+  { to: '/crop', icon: Crop, key: 'crop' },
+  { to: '/repair', icon: Wrench, key: 'repair' },
+  { to: '/compare', icon: GitCompare, key: 'compare' },
+  { to: '/tables', icon: Table, key: 'tables' },
   { to: '/forms', icon: ClipboardList, key: 'forms' },
   { to: '/sign', icon: PenTool, key: 'sign' },
   { to: '/protect', icon: ShieldCheck, key: 'protect' }

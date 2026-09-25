@@ -4,6 +4,7 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
 import { FileList } from '../../components/FileList';
+import { ResultCard } from '../../components/ResultCard';
 import { downloadBytes, isTooBig } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -56,6 +57,8 @@ export function OcrPage() {
   const [status, setStatus] = useState('');
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<OcrResult[]>([]);
+  const [pdfResult, setPdfResult] = useState<Uint8Array | null>(null);
+  const [outMode, setOutMode] = useState<'txt' | 'pdf'>('txt');
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
 
@@ -63,6 +66,7 @@ export function OcrPage() {
     setError(null);
     setNote('');
     setResults([]);
+    setPdfResult(null);
     const ok = f.filter((x) => !isTooBig(x));
     const merged = [...files, ...ok].slice(0, MAX_OCR_PAGES);
     if ([...files, ...ok].length > MAX_OCR_PAGES || ok.length < f.length) {
@@ -74,6 +78,7 @@ export function OcrPage() {
   const run = async () => {
     setError(null);
     setResults([]);
+    setPdfResult(null);
     if (files.length === 0) return setError(t('needFiles') as string);
     setBusy(true);
     setProgress(0);
@@ -104,13 +109,20 @@ export function OcrPage() {
       }
 
       const out: OcrResult[] = [];
+      const pdfParts: Uint8Array[] = [];
+      const wantPdf = outMode === 'pdf';
       try {
         for (let i = 0; i < images.length; i++) {
           setStatus(`${t('ocr.recognizing')} ${i + 1}/${images.length}`);
           const url = URL.createObjectURL(images[i].blob);
           try {
-            const { data } = await worker.recognize(url);
-            out.push({ name: images[i].name, text: data.text.trim() });
+            const { data } = await worker.recognize(
+              url,
+              { pdfTitle: images[i].name },
+              wantPdf ? { text: false, pdf: true } : undefined
+            );
+            if (wantPdf && data.pdf) pdfParts.push(new Uint8Array(data.pdf));
+            else out.push({ name: images[i].name, text: data.text.trim() });
           } finally {
             URL.revokeObjectURL(url);
           }
@@ -118,6 +130,11 @@ export function OcrPage() {
         }
       } finally {
         await worker.terminate();
+      }
+      if (wantPdf) {
+        if (pdfParts.length === 0) throw new Error('no-pdf');
+        const { mergePdfs } = await import('../../features/pdf-core/pdfOps');
+        setPdfResult(await mergePdfs(pdfParts));
       }
       setStatus('');
     } catch {
@@ -143,7 +160,7 @@ export function OcrPage() {
         onFiles={add}
       />
       {note && <p className="text-sm text-amber-600">{note}</p>}
-      <FileList files={files} onRemove={(i) => { setFiles((p) => p.filter((_, x) => x !== i)); setResults([]); }} onClear={() => { setFiles([]); setResults([]); }} />
+      <FileList files={files} onRemove={(i) => { setFiles((p) => p.filter((_, x) => x !== i)); setResults([]); setPdfResult(null); }} onClear={() => { setFiles([]); setResults([]); setPdfResult(null); }} />
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('ocr.language')}:</span>
@@ -151,7 +168,7 @@ export function OcrPage() {
           <button
             key={l}
             disabled={busy}
-            onClick={() => { setLang(l); setResults([]); }}
+            onClick={() => { setLang(l); setResults([]); setPdfResult(null); }}
             className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.${l}`) as string}
@@ -160,6 +177,19 @@ export function OcrPage() {
         <button onClick={run} disabled={busy} className="ml-auto rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? t('processing') : t('ocr.do')}
         </button>
+      </div>
+      <div className="flex items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <span className="text-sm font-semibold">{t('ocr.output')}:</span>
+        {(['txt', 'pdf'] as const).map((m) => (
+          <button
+            key={m}
+            disabled={busy}
+            onClick={() => { setOutMode(m); setResults([]); setPdfResult(null); }}
+            className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${outMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
+          >
+            {t(`ocr.out_${m}`) as string}
+          </button>
+        ))}
       </div>
 
       {busy && (
@@ -171,6 +201,7 @@ export function OcrPage() {
         </div>
       )}
       {error && <p className="text-sm text-red-500">{error}</p>}
+      {pdfResult && <ResultCard title={t('ready') as string} bytes={pdfResult} fileName="searchable.pdf" />}
 
       {results.length > 0 && (
         <div className="space-y-3 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">

@@ -4,13 +4,18 @@ import { ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { assertLimits, formatBytes } from '../../lib/utils';
-import { loadPdf, mergePdfs } from '../../features/pdf-core/pdfOps';
+import { loadPdf, mergePdfs, imagesToPdf } from '../../features/pdf-core/pdfOps';
 
 interface MergeItem {
   id: number;
   file: File;
+  kind: 'pdf' | 'img';
   pages: number | null;
   range: string;
+}
+
+function isPdfFile(f: File): boolean {
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
 }
 
 let nextId = 1;
@@ -27,10 +32,17 @@ export function MergePage() {
     setResult(null);
     const lim = assertLimits([...items.map((i) => i.file), ...added]);
     if (lim) return setError(t(lim) as string);
-    const fresh: MergeItem[] = added.map((file) => ({ id: nextId++, file, pages: null, range: '' }));
+    const fresh: MergeItem[] = added.map((file) => ({
+      id: nextId++,
+      file,
+      kind: isPdfFile(file) ? 'pdf' : 'img',
+      pages: isPdfFile(file) ? null : 1,
+      range: ''
+    }));
     setItems((p) => [...p, ...fresh]);
-    // Подгружаем число страниц для каждого файла — удобно задавать диапазоны
+    // Подгружаем число страниц для PDF — удобно задавать диапазоны
     for (const item of fresh) {
+      if (item.kind !== 'pdf') continue;
       try {
         const doc = await loadPdf(new Uint8Array(await item.file.arrayBuffer()));
         setItems((p) => p.map((x) => (x.id === item.id ? { ...x, pages: doc.getPageCount() } : x)));
@@ -59,7 +71,14 @@ export function MergePage() {
     if (items.some((i) => i.pages === 0)) return setError(t('mergePage.badFile') as string);
     setBusy(true);
     try {
-      const bufs = await Promise.all(items.map(async (i) => new Uint8Array(await i.file.arrayBuffer())));
+      const bufs = await Promise.all(
+        items.map(async (i) => {
+          const raw = new Uint8Array(await i.file.arrayBuffer());
+          if (i.kind === 'pdf') return raw;
+          const mime = i.file.type.includes('png') ? 'image/png' : 'image/jpeg';
+          return imagesToPdf([{ bytes: raw, mime }], 'fit');
+        })
+      );
       const ranges = items.map((i) => i.range.trim());
       const out = await mergePdfs(bufs, ranges);
       setResult(out);
@@ -74,7 +93,7 @@ export function MergePage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('mergePage.title')}</h1>
       <p className="text-sm text-slate-500">{t('mergePage.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} disabled={busy} onFiles={addFiles} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'], 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] }} disabled={busy} onFiles={addFiles} />
 
       {items.length > 0 && (
         <div className="space-y-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">

@@ -3,11 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { stampText, stampTextAt, setMetadata, loadPdf } from '../../features/pdf-core/pdfOps';
+import { stampBates } from '../../features/pdf-core/pages';
 import { isTooBig } from '../../lib/utils';
 import { cn } from '../../lib/utils';
 
 type H = 'left' | 'center' | 'right';
 type V = 'top' | 'middle' | 'bottom';
+
+const STAMPS = ['stamp_agreed', 'stamp_copy', 'stamp_secret', 'stamp_draft', 'stamp_paid'] as const;
 
 const POSITIONS: Array<{ h: H; v: V }> = [
   { h: 'left', v: 'top' }, { h: 'center', v: 'top' }, { h: 'right', v: 'top' },
@@ -26,6 +29,9 @@ export function EditPage() {
   const [size, setSize] = useState(16);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
+  const [batesPrefix, setBatesPrefix] = useState('DOC-');
+  const [batesStart, setBatesStart] = useState(1);
+  const [batesPad, setBatesPad] = useState(6);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
@@ -35,7 +41,7 @@ export function EditPage() {
   useEffect(() => {
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, page, allPages, pos, size, title, author]);
+  }, [text, page, allPages, pos, size, title, author, batesPrefix, batesStart, batesPad]);
 
   const open = async (f: File) => {
     if (isTooBig(f)) return setError(t('fileTooBig') as string);
@@ -61,7 +67,7 @@ export function EditPage() {
     return [clamped - 1];
   };
 
-  const apply = async (kind: 'stamp' | 'watermark' | 'numbers' | 'meta') => {
+  const apply = async (kind: 'stamp' | 'watermark' | 'numbers' | 'meta' | 'bates') => {
     if (!file) return;
     setBusy(true);
     setError(null);
@@ -71,6 +77,7 @@ export function EditPage() {
       if (kind === 'meta') out = await setMetadata(bytes, title, author);
       else if (kind === 'watermark') out = await stampText(bytes, text || 'ALL PDF', { watermark: true });
       else if (kind === 'numbers') out = await stampText(bytes, text || 'Page', { pageNumbers: true });
+      else if (kind === 'bates') out = await stampBates(bytes, { prefix: batesPrefix, start: Math.max(0, batesStart), pad: batesPad });
       else out = await stampTextAt(bytes, text || 'ALL PDF', { pages: parsePages(), h: pos.h, v: pos.v, size });
       setResult(out);
     } catch {
@@ -89,6 +96,14 @@ export function EditPage() {
         <label className="text-sm font-semibold">{t('editPage.text')}</label>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('editPage.textPh') as string}
           className="mt-2 w-full rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {STAMPS.map((s) => (
+            <button key={s} onClick={() => setText(t(`editPage.${s}`) as string)}
+              className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700">
+              {t(`editPage.${s}`)}
+            </button>
+          ))}
+        </div>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div>
@@ -134,6 +149,29 @@ export function EditPage() {
         {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       </div>
 
+      <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <p className="text-sm font-semibold">{t('editPage.batesTitle')}</p>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <label className="text-xs text-slate-500">
+            {t('editPage.prefix')}
+            <input value={batesPrefix} onChange={(e) => setBatesPrefix(e.target.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800" />
+          </label>
+          <label className="text-xs text-slate-500">
+            {t('editPage.startFrom')}
+            <input type="number" min={0} value={batesStart} onChange={(e) => setBatesStart(Number(e.target.value) || 0)}
+              className="mt-1 w-full rounded-xl border px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800" />
+          </label>
+          <label className="text-xs text-slate-500">
+            {t('editPage.pad')}
+            <input type="number" min={1} max={10} value={batesPad} onChange={(e) => setBatesPad(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
+              className="mt-1 w-full rounded-xl border px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800" />
+          </label>
+        </div>
+        <button disabled={!file || busy} onClick={() => apply('bates')} className="mt-2 w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          {t('editPage.addBates')}
+        </button>
+      </div>
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="grid gap-2 sm:grid-cols-2">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('editPage.titleMeta') as string} className="rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
