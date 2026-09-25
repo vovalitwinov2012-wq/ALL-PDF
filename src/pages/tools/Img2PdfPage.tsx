@@ -5,6 +5,7 @@ import { Dropzone } from '../../components/Dropzone';
 import { FileList } from '../../components/FileList';
 import { ResultCard } from '../../components/ResultCard';
 import { imagesToPdf } from '../../features/pdf-core/pdfOps';
+import { isTooBig } from '../../lib/utils';
 
 async function fileToBytes(f: File): Promise<{ bytes: Uint8Array; mime: string }> {
   const mime = f.type;
@@ -48,7 +49,20 @@ export function Img2PdfPage() {
   const add = (f: File[]) => {
     setError(null);
     setResult(null);
-    setFiles((p) => [...p, ...f]);
+    const ok = f.filter((x) => !isTooBig(x));
+    if (ok.length < f.length) setError(t('fileTooBig') as string);
+    if (ok.length) setFiles((p) => [...p, ...ok]);
+  };
+
+  const move = (i: number, dir: -1 | 1) => {
+    setResult(null);
+    setFiles((p) => {
+      const j = i + dir;
+      if (j < 0 || j >= p.length) return p;
+      const copy = [...p];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
   };
 
   const run = async () => {
@@ -87,10 +101,10 @@ export function Img2PdfPage() {
           e.target.value = '';
         }}
       />
-      <FileList files={files} onRemove={(i) => setFiles((p) => p.filter((_, x) => x !== i))} onClear={() => { setFiles([]); setResult(null); }} />
+      <FileList files={files} onMove={move} onRemove={(i) => { setResult(null); setFiles((p) => p.filter((_, x) => x !== i)); }} onClear={() => { setFiles([]); setResult(null); }} />
       <div className="flex gap-2">
         {(['fit', 'a4'] as const).map((s) => (
-          <button key={s} onClick={() => setSize(s)} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${size === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+          <button key={s} onClick={() => { setSize(s); setResult(null); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${size === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
             {t(`convertPage.${s}`) as string}
           </button>
         ))}

@@ -57,7 +57,7 @@
     "offlineTitle": "Works offline",
     "offlineText": "Install it as an app (PWA) — tools stay available without internet.",
     "limitsTitle": "Honest limits",
-    "limitsText": "Files up to 50 MB, OCR up to 10 pages at a time, language models download on first recognition. True AES password encryption and Office conversion are not available locally yet — the UI warns about it honestly.",
+    "limitsText": "Files up to 50 MB and up to 20 at a time, OCR up to 10 pages, PDF preview up to 20/50 pages. Language models download on first recognition. True AES password encryption is not available locally yet — the UI warns about it honestly.",
     "cta": "To the tools"
   },
   "mergePage": {
@@ -106,6 +106,7 @@
     "do": "Recognize",
     "loading": "Loading engine and models…",
     "recognizing": "Recognizing",
+    "capped": "Taking the first {{n}} images — that is the per-run limit.",
     "failed": "Recognition failed. Check the files and connection (models download on first run)."
   },
   "editPage": {
@@ -122,11 +123,12 @@
     "allPages": "all pages",
     "position": "Position",
     "size": "Size",
+    "allPagesNote": "Watermark and page numbers go on all pages.",
     "failed": "Could not apply. Check the page number."
   },
   "signPage": {
     "title": "Signature",
-    "hint": "Draw with mouse or finger, then place into the PDF.",
+    "hint": "Draw with mouse or finger, then place into the PDF. The signature goes to the bottom-right of the last page.",
     "clearSign": "Clear signature",
     "drawFirst": "Draw your signature on the canvas above first.",
     "place": "Place into PDF"
@@ -143,7 +145,8 @@
   "viewerPage": {
     "title": "View PDF",
     "searchPh": "Search in text…",
-    "found": "found"
+    "found": "found",
+    "truncated": "Showing the first {{n}} pages — that is the preview limit."
   },
   "formsPage": {
     "title": "PDF forms",

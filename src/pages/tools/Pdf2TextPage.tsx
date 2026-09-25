@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
-import { downloadBytes } from '../../lib/utils';
+import { downloadBytes, isTooBig } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -42,7 +42,13 @@ export function Pdf2TextPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('convertPage.pdf2textTitle')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => setFile(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+        if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
+        setError(null);
+        setEmpty(false);
+        setText('');
+        setFile(f[0]);
+      }} />
       <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
         {busy ? t('processing') : t('convertPage.do')}
       </button>

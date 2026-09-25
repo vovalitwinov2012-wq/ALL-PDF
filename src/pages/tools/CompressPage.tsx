@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
-import { formatBytes } from '../../lib/utils';
+import { formatBytes, isTooBig } from '../../lib/utils';
 import { compressPdf } from '../../features/pdf-core/pdfOps';
 
 export function CompressPage() {
@@ -29,7 +29,12 @@ export function CompressPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('compressPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => { setFile(f[0]); setResult(null); }} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+        if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
+        setError(null);
+        setFile(f[0]);
+        setResult(null);
+      }} />
       {file && (
         <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
           {t('was')}: <b>{formatBytes(file.size)}</b>

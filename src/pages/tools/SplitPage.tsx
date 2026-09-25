@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
-import { parsePageRanges } from '../../lib/utils';
+import { parsePageRanges, isTooBig } from '../../lib/utils';
 import { splitPdf, loadPdf } from '../../features/pdf-core/pdfOps';
 
 export function SplitPage() {
@@ -34,20 +34,25 @@ export function SplitPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('splitPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => { setFile(f[0]); setResult(null); }} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+        if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
+        setError(null);
+        setFile(f[0]);
+        setResult(null);
+      }} />
       {file && <p className="text-sm">📄 {file.name}</p>}
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <label className="text-sm font-semibold">{t('splitPage.mode')}</label>
         <div className="mt-2 flex gap-2">
           {(['extract', 'delete', 'rotate'] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)}
+            <button key={m} onClick={() => { setMode(m); setResult(null); }}
               className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${mode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
               {t(`splitPage.${m}`) as string}
             </button>
           ))}
         </div>
         {mode !== 'rotate' && (
-          <input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder={t('rangesPh') as string}
+          <input value={ranges} onChange={(e) => { setRanges(e.target.value); setResult(null); }} placeholder={t('rangesPh') as string}
             className="mt-3 w-full rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
         )}
         <button onClick={run} disabled={busy} className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">

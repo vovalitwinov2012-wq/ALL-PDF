@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { sanitizePdf, protectPdf } from '../../features/pdf-core/pdfOps';
+import { isTooBig } from '../../lib/utils';
 
 export function ProtectPage() {
   const { t } = useTranslation();
@@ -41,7 +42,16 @@ export function ProtectPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('protectPage.title')}</h1>
       <p className="text-sm text-slate-500">{t('protectPage.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => { setFile(f[0]); setResult(null); setNote(''); }} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+        if (isTooBig(f[0])) {
+          setFile(null);
+          setResult(null);
+          return setNote(t('fileTooBig') as string);
+        }
+        setFile(f[0]);
+        setResult(null);
+        setNote('');
+      }} />
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <label className="text-sm font-semibold">{t('protectPage.userPass')}</label>
         <input type="password" value={userPass} onChange={(e) => setUserPass(e.target.value)}

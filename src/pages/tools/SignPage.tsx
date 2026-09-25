@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { placeSignature } from '../../features/pdf-core/pdfOps';
+import { isTooBig } from '../../lib/utils';
 
 export function SignPage() {
   const { t } = useTranslation();
@@ -60,7 +61,7 @@ export function SignPage() {
         width={640}
         height={220}
         className="w-full touch-none rounded-2xl border-2 border-dashed border-indigo-300 bg-white dark:bg-slate-900"
-        onPointerDown={(e) => { setDrawing(true); (e.target as HTMLElement).setPointerCapture(e.pointerId); const p = pos(e); canvasRef.current!.getContext('2d')!.beginPath(); canvasRef.current!.getContext('2d')!.moveTo((p.x / canvasRef.current!.getBoundingClientRect().width) * 640, (p.y / canvasRef.current!.getBoundingClientRect().height) * 220); }}
+        onPointerDown={(e) => { setDrawing(true); setResult(null); (e.target as HTMLElement).setPointerCapture(e.pointerId); const p = pos(e); canvasRef.current!.getContext('2d')!.beginPath(); canvasRef.current!.getContext('2d')!.moveTo((p.x / canvasRef.current!.getBoundingClientRect().width) * 640, (p.y / canvasRef.current!.getBoundingClientRect().height) * 220); }}
         onPointerMove={(e) => {
           if (!drawing) return;
           const ctx = canvasRef.current!.getContext('2d')!;
@@ -76,7 +77,12 @@ export function SignPage() {
       <div className="flex gap-2">
         <button onClick={clear} className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold dark:bg-slate-800">{t('signPage.clearSign')}</button>
       </div>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => { setFile(f[0]); setResult(null); }} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => {
+        if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
+        setError(null);
+        setFile(f[0]);
+        setResult(null);
+      }} />
       <button onClick={place} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
         {busy ? t('processing') : t('signPage.place')}
       </button>

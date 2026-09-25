@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { stampText, stampTextAt, setMetadata, loadPdf } from '../../features/pdf-core/pdfOps';
+import { isTooBig } from '../../lib/utils';
 import { cn } from '../../lib/utils';
 
 type H = 'left' | 'center' | 'right';
@@ -29,7 +30,14 @@ export function EditPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
 
+  // Настройки изменились — показанный ранее результат им уже не соответствует
+  useEffect(() => {
+    setResult(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, page, allPages, pos, size, title, author]);
+
   const open = async (f: File) => {
+    if (isTooBig(f)) return setError(t('fileTooBig') as string);
     setFile(f);
     setResult(null);
     setError(null);
@@ -118,6 +126,7 @@ export function EditPage() {
           <button disabled={!file || busy} onClick={() => apply('watermark')} className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{t('editPage.watermark')}</button>
           <button disabled={!file || busy} onClick={() => apply('numbers')} className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{t('editPage.pageNumbers')}</button>
         </div>
+        <p className="mt-2 text-xs text-slate-400">{t('editPage.allPagesNote')}</p>
         {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       </div>
 

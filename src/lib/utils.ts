@@ -45,15 +45,19 @@ export function parsePageRanges(input: string, max: number): number[] {
   return [...out].sort((x, y) => x - y);
 }
 
-export const FREE_LIMITS = {
+export const LIMITS = {
   maxFileBytes: 50 * 1024 * 1024,
   maxFiles: 20
 };
 
-export function assertFreeLimits(files: File[]): string | null {
-  if (files.length > FREE_LIMITS.maxFiles) return 'tooManyFiles';
+export function assertLimits(files: File[]): string | null {
+  if (files.length > LIMITS.maxFiles) return 'tooManyFiles';
   for (const f of files) {
-    if (f.size > FREE_LIMITS.maxFileBytes) return 'fileTooBig';
+    if (f.size > LIMITS.maxFileBytes) return 'fileTooBig';
   }
   return null;
+}
+
+export function isTooBig(f: File): boolean {
+  return f.size > LIMITS.maxFileBytes;
 }

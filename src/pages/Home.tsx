@@ -24,7 +24,9 @@ export function Home() {
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return TOOLS;
-    return TOOLS.filter((tool) => (t(`tools.${tool.key}.name`) as string).toLowerCase().includes(needle));
+    return TOOLS.filter((tool) =>
+      ((t(`tools.${tool.key}.name`) as string) + ' ' + (t(`tools.${tool.key}.desc`) as string)).toLowerCase().includes(needle)
+    );
   }, [q, t]);
 
   return (

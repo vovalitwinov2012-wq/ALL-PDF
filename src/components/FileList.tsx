@@ -1,8 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../lib/utils';
-import { X, FileText, Image as ImageIcon } from 'lucide-react';
+import { X, FileText, Image as ImageIcon, ArrowUp, ArrowDown } from 'lucide-react';
 
-export function FileList({ files, onRemove, onClear }: { files: File[]; onRemove: (i: number) => void; onClear: () => void }) {
+export function FileList({ files, onRemove, onClear, onMove }: {
+  files: File[];
+  onRemove: (i: number) => void;
+  onClear: () => void;
+  onMove?: (i: number, dir: -1 | 1) => void;
+}) {
   const { t } = useTranslation();
   if (files.length === 0) return null;
   return (
@@ -17,6 +22,12 @@ export function FileList({ files, onRemove, onClear }: { files: File[]; onRemove
             {f.type.includes('image') ? <ImageIcon className="h-4 w-4 text-indigo-500" /> : <FileText className="h-4 w-4 text-indigo-500" />}
             <span className="flex-1 truncate">{f.name}</span>
             <span className="text-xs text-slate-400">{formatBytes(f.size)}</span>
+            {onMove && (
+              <>
+                <button onClick={() => onMove(i, -1)} disabled={i === 0} aria-label={t('moveUp') as string} className="text-slate-400 hover:text-indigo-500 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
+                <button onClick={() => onMove(i, 1)} disabled={i === files.length - 1} aria-label={t('moveDown') as string} className="text-slate-400 hover:text-indigo-500 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
+              </>
+            )}
             <button onClick={() => onRemove(i)} aria-label="remove" className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
           </li>
         ))}

@@ -4,7 +4,7 @@ import * as pdfjs from 'pdfjs-dist';
 import JSZip from 'jszip';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
-import { downloadBytes } from '../../lib/utils';
+import { downloadBytes, isTooBig } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -22,15 +22,29 @@ export function Pdf2ImgPage() {
   const [format, setFormat] = useState<'jpeg' | 'png'>('jpeg');
   const [scale, setScale] = useState(2);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
   const [truncated, setTruncated] = useState(false);
+
+  // Настройки/файл изменились — старые превью им уже не соответствуют
+  const touch = () => {
+    pages.forEach((p) => URL.revokeObjectURL(p.url));
+    setPages([]);
+    setTruncated(false);
+  };
+
+  const pick = (f: File) => {
+    if (isTooBig(f)) return setError(t('fileTooBig') as string);
+    setError(null);
+    touch();
+    setFile(f);
+  };
 
   const run = async () => {
     if (!file) return;
     setBusy(true);
-    pages.forEach((p) => URL.revokeObjectURL(p.url));
-    setPages([]);
-    setTruncated(false);
+    setError(null);
+    touch();
     try {
       const buf = await file.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
@@ -53,6 +67,8 @@ export function Pdf2ImgPage() {
         out.push({ blob, url: URL.createObjectURL(blob), name });
         setPages([...out]);
       }
+    } catch {
+      setError(t('failed') as string);
     } finally {
       setBusy(false);
     }
@@ -68,15 +84,16 @@ export function Pdf2ImgPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('convertPage.pdf2imgTitle')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => setFile(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} onFiles={(f) => pick(f[0])} />
+      {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('convertPage.format')}:</span>
         {(['jpeg', 'png'] as const).map((f) => (
-          <button key={f} onClick={() => setFormat(f)} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${format === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{f}</button>
+          <button key={f} onClick={() => { setFormat(f); touch(); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${format === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{f}</button>
         ))}
         <span className="ml-2 text-sm font-semibold">{t('convertPage.scale')}:</span>
         {[1, 2, 3].map((s) => (
-          <button key={s} onClick={() => setScale(s)} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{s}x</button>
+          <button key={s} onClick={() => { setScale(s); touch(); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{s}x</button>
         ))}
         <button onClick={run} disabled={!file || busy} className="ml-auto rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? t('processing') : t('convertPage.do')}

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
-import { assertFreeLimits, formatBytes } from '../../lib/utils';
+import { assertLimits, formatBytes } from '../../lib/utils';
 import { loadPdf, mergePdfs } from '../../features/pdf-core/pdfOps';
 
 interface MergeItem {
@@ -25,7 +25,7 @@ export function MergePage() {
   const addFiles = async (added: File[]) => {
     setError(null);
     setResult(null);
-    const lim = assertFreeLimits([...items.map((i) => i.file), ...added]);
+    const lim = assertLimits([...items.map((i) => i.file), ...added]);
     if (lim) return setError(t(lim) as string);
     const fresh: MergeItem[] = added.map((file) => ({ id: nextId++, file, pages: null, range: '' }));
     setItems((p) => [...p, ...fresh]);
@@ -41,6 +41,8 @@ export function MergePage() {
   };
 
   const move = (id: number, dir: -1 | 1) => {
+    // Порядок изменился — старый результат больше не соответствует настройкам
+    setResult(null);
     setItems((p) => {
       const i = p.findIndex((x) => x.id === id);
       const j = i + dir;
@@ -98,13 +100,13 @@ export function MergePage() {
                   <button onClick={() => move(item.id, 1)} disabled={pos === items.length - 1} aria-label={t('moveDown') as string} className="rounded-lg p-1 hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-slate-700">
                     <ArrowDown className="h-4 w-4" />
                   </button>
-                  <button onClick={() => setItems((p) => p.filter((x) => x.id !== item.id))} aria-label="remove" className="rounded-lg p-1 text-slate-400 hover:text-red-500">
+                  <button onClick={() => { setResult(null); setItems((p) => p.filter((x) => x.id !== item.id)); }} aria-label="remove" className="rounded-lg p-1 text-slate-400 hover:text-red-500">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 <input
                   value={item.range}
-                  onChange={(e) => setItems((p) => p.map((x) => (x.id === item.id ? { ...x, range: e.target.value } : x)))}
+                  onChange={(e) => { setResult(null); setItems((p) => p.map((x) => (x.id === item.id ? { ...x, range: e.target.value } : x))); }}
                   placeholder={item.pages ? `${t('rangesPh')} (${t('allPages')}: ${item.pages})` : (t('rangesPh') as string)}
                   className="mt-2 w-full rounded-lg border bg-white px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
                 />

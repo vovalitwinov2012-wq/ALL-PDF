@@ -3,15 +3,24 @@ import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { flattenPdf, listFormFields } from '../../features/pdf-core/pdfOps';
+import { isTooBig } from '../../lib/utils';
 
 export function FormsPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [fields, setFields] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
 
   const inspect = async (f: File) => {
+    if (isTooBig(f)) {
+      setFile(null);
+      setFields(null);
+      setResult(null);
+      return setError(t('fileTooBig') as string);
+    }
+    setError(null);
     setFile(f);
     setResult(null);
     const bytes = new Uint8Array(await f.arrayBuffer());
@@ -21,8 +30,11 @@ export function FormsPage() {
   const flatten = async () => {
     if (!file) return;
     setBusy(true);
+    setError(null);
     try {
       setResult(await flattenPdf(new Uint8Array(await file.arrayBuffer())));
+    } catch {
+      setError(t('failed') as string);
     } finally {
       setBusy(false);
     }
@@ -50,6 +62,7 @@ export function FormsPage() {
       <button onClick={flatten} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
         {busy ? t('processing') : t('formsPage.flatten')}
       </button>
+      {error && <p className="text-sm text-red-500">{error}</p>}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="flattened.pdf" />}
     </div>
   );

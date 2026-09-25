@@ -4,7 +4,7 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
 import { FileList } from '../../components/FileList';
-import { downloadBytes } from '../../lib/utils';
+import { downloadBytes, isTooBig } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -14,6 +14,7 @@ interface OcrResult {
 }
 
 const MAX_OCR_PAGES = 10;
+const MAX_IMAGES = 20;
 
 async function pdfPagesToImages(file: File): Promise<Array<{ name: string; blob: Blob }>> {
   const buf = await file.arrayBuffer();
@@ -44,6 +45,19 @@ export function OcrPage() {
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<OcrResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+
+  const add = (f: File[]) => {
+    setError(null);
+    setNote('');
+    setResults([]);
+    const ok = f.filter((x) => !isTooBig(x));
+    const merged = [...files, ...ok].slice(0, MAX_OCR_PAGES);
+    if ([...files, ...ok].length > MAX_OCR_PAGES || ok.length < f.length) {
+      setNote(t('ocr.capped', { n: MAX_OCR_PAGES }) as string);
+    }
+    setFiles(merged);
+  };
 
   const run = async () => {
     setError(null);
@@ -63,7 +77,7 @@ export function OcrPage() {
       });
 
       // Собираем картинки: фото напрямую, PDF постранично
-      const images: Array<{ name: string; blob: Blob }> = [];
+      let images: Array<{ name: string; blob: Blob }> = [];
       for (const f of files.slice(0, MAX_OCR_PAGES)) {
         if (f.type === 'application/pdf') {
           images.push(...(await pdfPagesToImages(f)));
@@ -71,20 +85,27 @@ export function OcrPage() {
           images.push({ name: f.name, blob: f });
         }
       }
+      if (images.length > MAX_IMAGES) {
+        images = images.slice(0, MAX_IMAGES);
+        setNote(t('ocr.capped', { n: MAX_IMAGES }) as string);
+      }
 
       const out: OcrResult[] = [];
-      for (let i = 0; i < images.length; i++) {
-        setStatus(`${t('ocr.recognizing')} ${i + 1}/${images.length}`);
-        const url = URL.createObjectURL(images[i].blob);
-        try {
-          const { data } = await worker.recognize(url);
-          out.push({ name: images[i].name, text: data.text.trim() });
-        } finally {
-          URL.revokeObjectURL(url);
+      try {
+        for (let i = 0; i < images.length; i++) {
+          setStatus(`${t('ocr.recognizing')} ${i + 1}/${images.length}`);
+          const url = URL.createObjectURL(images[i].blob);
+          try {
+            const { data } = await worker.recognize(url);
+            out.push({ name: images[i].name, text: data.text.trim() });
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+          setResults([...out]);
         }
-        setResults([...out]);
+      } finally {
+        await worker.terminate();
       }
-      await worker.terminate();
       setStatus('');
     } catch {
       setError(t('ocr.failed') as string);
@@ -105,8 +126,9 @@ export function OcrPage() {
 
       <Dropzone
         accept={{ 'application/pdf': ['.pdf'], 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.bmp'] }}
-        onFiles={(f) => { setFiles((p) => [...p, ...f].slice(0, MAX_OCR_PAGES)); setResults([]); }}
+        onFiles={add}
       />
+      {note && <p className="text-sm text-amber-600">{note}</p>}
       <FileList files={files} onRemove={(i) => setFiles((p) => p.filter((_, x) => x !== i))} onClear={() => { setFiles([]); setResults([]); }} />
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -114,7 +136,7 @@ export function OcrPage() {
         {(['rus', 'eng', 'both'] as const).map((l) => (
           <button
             key={l}
-            onClick={() => setLang(l)}
+            onClick={() => { setLang(l); setResults([]); }}
             className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.${l}`) as string}
