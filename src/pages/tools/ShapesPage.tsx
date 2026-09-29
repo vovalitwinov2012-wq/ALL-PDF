@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { Square, Circle, Minus, ArrowRight, Highlighter, Ban, Undo2, Trash2 } from 'lucide-react';
+import { Undo2, Trash2, ChevronDown } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
 import { ResultCard } from '../../components/ResultCard';
 import { isTooBig, cn } from '../../lib/utils';
@@ -11,22 +11,34 @@ import { drawShapes, Shape, ShapeColor } from '../../features/pdf-core/pages';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-type Tool = 'rect' | 'ellipse' | 'line' | 'arrow' | 'highlight' | 'redact';
+type Tool = 'rect' | 'ellipse' | 'line' | 'arrow' | 'arrow2' | 'star' | 'pen' | 'text' | 'check' | 'highlight' | 'redact';
 
 const COLORS: Array<{ name: string; c: ShapeColor }> = [
   { name: 'red', c: { r: 0.85, g: 0.15, b: 0.15 } },
-  { name: 'blue', c: { r: 0.15, g: 0.35, b: 0.9 } },
+  { name: 'orange', c: { r: 1, g: 0.55, b: 0.1 } },
+  { name: 'yellow', c: { r: 1, g: 0.85, b: 0.2 } },
   { name: 'green', c: { r: 0.1, g: 0.6, b: 0.25 } },
-  { name: 'black', c: { r: 0.1, g: 0.1, b: 0.1 } }
+  { name: 'blue', c: { r: 0.15, g: 0.35, b: 0.9 } },
+  { name: 'purple', c: { r: 0.55, g: 0.3, b: 0.9 } },
+  { name: 'black', c: { r: 0.1, g: 0.1, b: 0.1 } },
+  { name: 'white', c: { r: 1, g: 1, b: 1 } }
 ];
 
-const TOOLS: Array<{ id: Tool; icon: typeof Square }> = [
-  { id: 'rect', icon: Square },
-  { id: 'ellipse', icon: Circle },
-  { id: 'line', icon: Minus },
-  { id: 'arrow', icon: ArrowRight },
-  { id: 'highlight', icon: Highlighter },
-  { id: 'redact', icon: Ban }
+const WIDTHS = [2, 4, 6, 10];
+const TEXT_SIZES = [14, 20, 28];
+
+const TOOLS: Array<{ id: Tool }> = [
+  { id: 'rect' },
+  { id: 'ellipse' },
+  { id: 'line' },
+  { id: 'arrow' },
+  { id: 'arrow2' },
+  { id: 'star' },
+  { id: 'pen' },
+  { id: 'text' },
+  { id: 'check' },
+  { id: 'highlight' },
+  { id: 'redact' }
 ];
 
 interface VPoint {
@@ -44,9 +56,13 @@ export function ShapesPage() {
   const [vp, setVp] = useState<{ w: number; h: number; toPdf: (x: number, y: number) => [number, number]; toView: (x: number, y: number) => [number, number] } | null>(null);
   const [tool, setTool] = useState<Tool>('rect');
   const [color, setColor] = useState<ShapeColor>(COLORS[0].c);
-  const [width, setWidth] = useState(3);
+  const colorName = COLORS.find((x) => x.c === color)?.name ?? 'red';
+  const [width, setWidth] = useState(4);
+  const [widthOpen, setWidthOpen] = useState(false);
+  const [textAnnot, setTextAnnot] = useState('');
+  const [textSize, setTextSize] = useState(20);
   const [shapes, setShapes] = useState<Record<number, Shape[]>>({});
-  const [draft, setDraft] = useState<{ a: VPoint; b: VPoint } | null>(null);
+  const [draft, setDraft] = useState<{ a: VPoint; b: VPoint; pts?: VPoint[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
@@ -151,13 +167,32 @@ export function ShapesPage() {
     return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
   };
 
-  const commit = (a: VPoint, b: VPoint) => {
+  const pushShape = (s: Shape) => {
+    setResult(null);
+    setShapes((p) => ({ ...p, [page]: [...(p[page] ?? []), s] }));
+  };
+
+  const commit = (a: VPoint, b: VPoint, pts?: VPoint[]) => {
     if (!vp) return;
+    // Карандаш: произвольная линия из точек
+    if (tool === 'pen') {
+      const track = (pts ?? [a, b]).map((pt) => vp.toPdf(pt.x, pt.y));
+      if (track.length < 2) return;
+      pushShape({ kind: 'pen', pts: track, color, width });
+      return;
+    }
+    // Текст: ставится тапом, размер — из настройки
+    if (tool === 'text') {
+      const [x, y] = vp.toPdf(a.x, a.y);
+      const str = textAnnot.trim() || 'Текст';
+      pushShape({ kind: 'text', x, y, str, size: textSize, color });
+      return;
+    }
     const [x1, y1] = vp.toPdf(a.x, a.y);
     const [x2, y2] = vp.toPdf(b.x, b.y);
     // Порог отсева под палец больше: дрожание пальца не должно давать ложных штрихов
     const MIN = lastPointer.current === 'mouse' ? 3 : 7;
-    if (Math.hypot(x2 - x1, y2 - y1) < MIN && (tool === 'line' || tool === 'arrow')) {
+    if ((tool === 'line' || tool === 'arrow' || tool === 'arrow2' || tool === 'check') && Math.hypot(x2 - x1, y2 - y1) < MIN) {
       flashToast(t('shapes.tooSmall') as string);
       return;
     }
@@ -171,7 +206,9 @@ export function ShapesPage() {
         flashToast(t('shapes.tooSmall') as string);
         return;
       }
-      s = tool === 'rect' ? { kind: 'rect', x, y, w, h, color, width } : { kind: tool, x, y, w, h };
+      s = tool === 'rect'
+        ? { kind: 'rect', x, y, w, h, color, width }
+        : { kind: tool, x, y, w, h, color };
     } else if (tool === 'ellipse') {
       const rx = Math.abs(x2 - x1) / 2;
       const ry = Math.abs(y2 - y1) / 2;
@@ -180,11 +217,17 @@ export function ShapesPage() {
         return;
       }
       s = { kind: 'ellipse', cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, rx, ry, color, width };
+    } else if (tool === 'star') {
+      const r = Math.hypot(x2 - x1, y2 - y1);
+      if (r < MIN) {
+        flashToast(t('shapes.tooSmall') as string);
+        return;
+      }
+      s = { kind: 'star', cx: x1, cy: y1, r, color, width };
     } else {
       s = { kind: tool, x1, y1, x2, y2, color, width };
     }
-    setResult(null);
-    setShapes((p) => ({ ...p, [page]: [...(p[page] ?? []), s] }));
+    pushShape(s);
   };
 
   const undo = () => {
@@ -232,7 +275,8 @@ export function ShapesPage() {
       return;
     }
     if (pointers.current.size > 2) return;
-    setDraft({ a: local(e), b: local(e) });
+    const p = local(e);
+    setDraft(tool === 'pen' ? { a: p, b: p, pts: [p] } : { a: p, b: p });
   };
 
   const onSvgMove = (e: React.PointerEvent) => {
@@ -252,7 +296,14 @@ export function ShapesPage() {
       }
       return;
     }
-    if (draft) setDraft({ a: draft.a, b: local(e) });
+    if (draft) {
+      if (tool === 'pen') {
+        const p = local(e);
+        setDraft({ a: draft.a, b: p, pts: [...(draft.pts ?? [draft.a]), p] });
+      } else {
+        setDraft({ a: draft.a, b: local(e) });
+      }
+    }
   };
 
   const onSvgUp = (e: React.PointerEvent) => {
@@ -264,7 +315,11 @@ export function ShapesPage() {
       return;
     }
     if (draft) {
-      commit(draft.a, local(e));
+      if (tool === 'pen') {
+        commit(draft.a, local(e), draft.pts);
+      } else {
+        commit(draft.a, local(e));
+      }
       setDraft(null);
     }
   };
@@ -283,7 +338,7 @@ export function ShapesPage() {
     if (s.kind === 'highlight' || s.kind === 'redact') {
       const [x, y] = P(s.x, s.y + s.h);
       const [x2, y2] = P(s.x + s.w, s.y);
-      return <rect x={x} y={y} width={x2 - x} height={y2 - y} fill={s.kind === 'redact' ? '#000' : 'rgba(255,235,59,0.45)'} />;
+      return <rect x={x} y={y} width={x2 - x} height={y2 - y} fill={css(s.color)} opacity={s.kind === 'redact' ? 1 : 0.45} />;
     }
     if (s.kind === 'ellipse') {
       const [cx, cy] = P(s.cx, s.cy);
@@ -291,35 +346,87 @@ export function ShapesPage() {
       const [, ey] = P(s.cx, s.cy + s.ry);
       return <ellipse cx={cx} cy={cy} rx={Math.abs(ex - cx)} ry={Math.abs(ey - cy)} fill="none" stroke={css(s.color)} strokeWidth={s.width} />;
     }
+    if (s.kind === 'star') {
+      const pts: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const rr = i % 2 === 0 ? s.r : s.r * 0.45;
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const [px, py] = P(s.cx + rr * Math.cos(a), s.cy + rr * Math.sin(a));
+        pts.push(`${px},${py}`);
+      }
+      return <polygon points={pts.join(' ')} fill="none" stroke={css(s.color)} strokeWidth={s.width} strokeLinejoin="round" />;
+    }
+    if (s.kind === 'pen') {
+      const pts = s.pts.map(([px, py]) => P(px, py).join(',')).join(' ');
+      return <polyline points={pts} fill="none" stroke={css(s.color)} strokeWidth={s.width} strokeLinecap="round" strokeLinejoin="round" />;
+    }
+    if (s.kind === 'text') {
+      const [x, y] = P(s.x, s.y);
+      const k = Math.abs(P(s.x + 1, s.y)[0] - x) || 1; // view-пикселей на пункт
+      return <text x={x} y={y} fontSize={s.size * k} fill={css(s.color)} fontWeight="bold">{s.str}</text>;
+    }
+    if (s.kind === 'check') {
+      const [x1, y1] = P(s.x1, s.y1);
+      const mx = s.x1 + (s.x2 - s.x1) * 0.35;
+      const my = s.y1 + (s.y2 - s.y1) * 0.55;
+      const [mxv, myv] = P(mx, my);
+      const [x2, y2] = P(s.x2, s.y2);
+      return <polyline points={`${x1},${y1} ${mxv},${myv} ${x2},${y2}`} fill="none" stroke={css(s.color)} strokeWidth={s.width} strokeLinecap="round" strokeLinejoin="round" />;
+    }
     const [x1, y1] = P(s.x1, s.y1);
     const [x2, y2] = P(s.x2, s.y2);
     if (s.kind === 'line') return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={css(s.color)} strokeWidth={s.width} />;
+    const arrowHead = (ex: number, ey: number, ang: number) => {
+      const L = Math.max(10, s.width * 5);
+      const h1x = ex - L * Math.cos(ang + Math.PI / 6);
+      const h1y = ey - L * Math.sin(ang + Math.PI / 6);
+      const h2x = ex - L * Math.cos(ang - Math.PI / 6);
+      const h2y = ey - L * Math.sin(ang - Math.PI / 6);
+      return (
+        <>
+          <line x1={ex} y1={ey} x2={h1x} y2={h1y} />
+          <line x1={ex} y1={ey} x2={h2x} y2={h2y} />
+        </>
+      );
+    };
     const ang = Math.atan2(y2 - y1, x2 - x1);
-    const L = Math.max(10, s.width * 5);
-    const h1x = x2 - L * Math.cos(ang + Math.PI / 6);
-    const h1y = y2 - L * Math.sin(ang + Math.PI / 6);
-    const h2x = x2 - L * Math.cos(ang - Math.PI / 6);
-    const h2y = y2 - L * Math.sin(ang - Math.PI / 6);
     return (
       <g stroke={css(s.color)} strokeWidth={s.width}>
         <line x1={x1} y1={y1} x2={x2} y2={y2} />
-        <line x1={x2} y1={y2} x2={h1x} y2={h1y} />
-        <line x1={x2} y1={y2} x2={h2x} y2={h2y} />
+        {arrowHead(x2, y2, ang)}
+        {s.kind === 'arrow2' && arrowHead(x1, y1, ang + Math.PI)}
       </g>
     );
   };
 
   const draftSvg = () => {
     if (!draft || !vp) return null;
+    if (tool === 'pen' && draft.pts && draft.pts.length > 1) {
+      const pts = draft.pts.map((p) => `${p.x},${p.y}`).join(' ');
+      return <polyline points={pts} fill="none" stroke="#4f46e5" strokeWidth={2} strokeLinecap="round" />;
+    }
+    if (tool === 'text') {
+      return <circle cx={draft.a.x} cy={draft.a.y} r={5} fill="none" stroke="#4f46e5" strokeWidth={2} strokeDasharray="4 2" />;
+    }
     const w = Math.abs(draft.b.x - draft.a.x);
     const h = Math.abs(draft.b.y - draft.a.y);
     if (tool === 'ellipse') {
       return <ellipse cx={(draft.a.x + draft.b.x) / 2} cy={(draft.a.y + draft.b.y) / 2} rx={w / 2} ry={h / 2} fill="none" stroke="#4f46e5" strokeWidth={2} strokeDasharray="5 3" />;
     }
-    if (tool === 'line' || tool === 'arrow') {
+    if (tool === 'line' || tool === 'arrow' || tool === 'arrow2' || tool === 'check') {
       return <line x1={draft.a.x} y1={draft.a.y} x2={draft.b.x} y2={draft.b.y} stroke="#4f46e5" strokeWidth={2} strokeDasharray="5 3" />;
     }
-    return <rect x={Math.min(draft.a.x, draft.b.x)} y={Math.min(draft.a.y, draft.b.y)} width={w} height={h} fill={tool === 'redact' ? 'rgba(0,0,0,0.6)' : 'rgba(99,102,241,0.15)'} stroke="#4f46e5" strokeWidth={2} strokeDasharray="5 3" />;
+    if (tool === 'star') {
+      const r = Math.hypot(draft.b.x - draft.a.x, draft.b.y - draft.a.y);
+      return <circle cx={draft.a.x} cy={draft.a.y} r={r} fill="none" stroke="#4f46e5" strokeWidth={2} strokeDasharray="5 3" />;
+    }
+    return <rect x={Math.min(draft.a.x, draft.b.x)} y={Math.min(draft.a.y, draft.b.y)} width={w} height={h} fill={tool === 'redact' ? `${cssColor()}999` : 'rgba(99,102,241,0.15)'} stroke="#4f46e5" strokeWidth={2} strokeDasharray="5 3" />;
+  };
+
+  const cssColor = () => {
+    const c = COLORS.find((x) => x.c === color)?.c ?? COLORS[0].c;
+    const to = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
+    return `#${to(c.r)}${to(c.g)}${to(c.b)}`;
   };
 
   return (
@@ -351,43 +458,90 @@ export function ShapesPage() {
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {TOOLS.map(({ id, icon: Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setTool(id)}
-                  title={t(`shapes.tool_${id}`) as string}
-                  aria-label={t(`shapes.tool_${id}`) as string}
-                  aria-pressed={tool === id}
-                  className={cn('grid min-h-[44px] min-w-[44px] place-items-center rounded-xl transition-colors', tool === id ? 'bg-indigo-600 text-white' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800')}
-                >
-                  <Icon className="h-5 w-5" />
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                {COLORS.map(({ name, c }) => (
-                  <button
-                    key={name}
-                    onClick={() => setColor(c)}
-                    aria-label={t(`shapes.color_${name}`) as string}
-                    title={t(`shapes.color_${name}`) as string}
-                    aria-pressed={color === c}
-                    className={cn('h-9 w-9 rounded-full border-[3px] transition', color === c ? 'border-indigo-600' : 'border-slate-200 dark:border-slate-700')}
-                    style={{ backgroundColor: `rgb(${c.r * 255},${c.g * 255},${c.b * 255})` }}
+            <div className="grid gap-2 sm:grid-cols-3">
+              <label className="block text-xs font-semibold text-slate-500">
+                {t('shapes.toolLabel')}
+                <span className="relative mt-1 block">
+                  <select
+                    value={tool}
+                    onChange={(e) => setTool(e.target.value as Tool)}
+                    className="min-h-[44px] w-full appearance-none rounded-xl border bg-white pl-3 pr-9 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    {TOOLS.map(({ id }) => (
+                      <option key={id} value={id}>{t(`shapes.tool_${id}`)}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </span>
+              </label>
+              <label className="block text-xs font-semibold text-slate-500">
+                {t('shapes.colorLabel')}
+                <span className="relative mt-1 block">
+                  <select
+                    value={colorName}
+                    onChange={(e) => setColor(COLORS.find((x) => x.name === e.target.value)?.c ?? COLORS[0].c)}
+                    className="min-h-[44px] w-full appearance-none rounded-xl border bg-white pl-9 pr-9 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    {COLORS.map(({ name }) => (
+                      <option key={name} value={name}>{t(`shapes.color_${name}`)}</option>
+                    ))}
+                  </select>
+                  <span
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border border-slate-300 dark:border-slate-600"
+                    style={{ backgroundColor: cssColor() }}
                   />
-                ))}
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </span>
+              </label>
+              <div className="text-xs font-semibold text-slate-500">
+                {t('shapes.widthLabel')}
+                <div className="relative mt-1">
+                  <button
+                    onClick={() => setWidthOpen((v) => !v)}
+                    aria-expanded={widthOpen}
+                    className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border bg-white px-3 dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    <span className="flex-1 rounded-full" style={{ height: Math.max(2, Math.min(10, width)), backgroundColor: cssColor() }} />
+                    <span className="text-sm text-slate-500">{width}px</span>
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  </button>
+                  {widthOpen && (
+                    <div className="absolute inset-x-0 top-full z-10 mt-1 space-y-1 rounded-xl border bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                      {WIDTHS.map((w) => (
+                        <button
+                          key={w}
+                          onClick={() => { setWidth(w); setWidthOpen(false); }}
+                          aria-pressed={width === w}
+                          className={cn('flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 transition-colors', width === w ? 'bg-indigo-100 dark:bg-indigo-950' : 'hover:bg-slate-100 dark:hover:bg-slate-800')}
+                        >
+                          <span className="flex-1 rounded-full" style={{ height: Math.max(2, Math.min(10, w)), backgroundColor: cssColor() }} />
+                          <span className="w-10 text-right text-xs text-slate-500">{w}px</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-1 text-sm">
-                {[2, 4, 6].map((w) => (
-                  <button key={w} onClick={() => setWidth(w)} aria-pressed={width === w} className={cn('min-h-[40px] rounded-lg px-3 py-1 transition-colors', width === w ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800')}>{w}</button>
-                ))}
-              </div>
-              <span className="w-full text-xs text-slate-500 sm:w-auto">
-                {t(`shapes.tool_${tool}`)} · {t(`shapes.color_${COLORS.find((x) => x.c === color)?.name ?? 'red'}`)} · {width}
-              </span>
             </div>
+            {tool === 'text' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={textAnnot}
+                  onChange={(e) => setTextAnnot(e.target.value)}
+                  placeholder={t('shapes.textPh') as string}
+                  className="min-h-[44px] min-w-0 flex-1 rounded-xl border bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                />
+                {TEXT_SIZES.map((s) => (
+                  <button key={s} onClick={() => setTextSize(s)} aria-pressed={textSize === s}
+                    className={cn('min-h-[44px] rounded-xl px-3 text-sm font-semibold transition-colors', textSize === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800')}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-slate-500">
+              {t(`shapes.tool_${tool}`)} · {t(`shapes.color_${colorName}`)} · {tool === 'text' ? `${textSize}px` : `${width}px`}
+            </p>
             <button onClick={apply} disabled={busy || totalShapes === 0} className="min-h-[48px] w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
               {busy ? t('processing') : t('shapes.apply', { n: totalShapes })}
             </button>

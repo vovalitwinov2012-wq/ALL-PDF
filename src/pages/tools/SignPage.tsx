@@ -2,12 +2,14 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { BookOpen, Upload, Trash2 } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
 import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
-import { placeSignature } from '../../features/pdf-core/pdfOps';
+import { PdfOverlay, OverlayPageData } from '../../components/PdfOverlay';
+import { stampImages } from '../../features/pdf-core/pdfOps';
 import { loadPdf } from '../../features/pdf-core/pdfOps';
-import { isTooBig } from '../../lib/utils';
+import { isTooBig, downloadBytes } from '../../lib/utils';
 import { cn } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -15,10 +17,73 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const CW = 640;
 const CH = 260;
 const INK = '#1e1b4b';
+const BASE_W_PT = 180;
 
 interface Stroke {
   pts: Array<{ x: number; y: number }>;
   w: number;
+}
+
+interface LibItem {
+  id: number;
+  kind: 'sign' | 'stamp';
+  name: string;
+  url: string;
+  bytes: Uint8Array;
+  aspect: number;
+  transparent: boolean;
+}
+
+interface Placement {
+  key: number;
+  itemId: number;
+  fx: number; // центр, доли страницы
+  fy: number;
+  scale: number; // множитель к BASE_W_PT
+}
+
+interface SignPageInfo extends OverlayPageData {
+  wPt: number;
+  hPt: number;
+}
+
+let nextId = 1;
+
+function decodeImage(bytes: Uint8Array): Promise<{ url: string; w: number; h: number; transparent: boolean }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: 'image/png' }));
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        const cw = Math.min(400, w);
+        const ch = Math.max(1, Math.round((cw / Math.max(1, w)) * h));
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, cw, ch);
+        const d = ctx.getImageData(0, 0, cw, ch).data;
+        let transparent = false;
+        for (let i = 3; i < d.length; i += 16) {
+          if (d[i] < 250) {
+            transparent = true;
+            break;
+          }
+        }
+        resolve({ url, w, h, transparent });
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('decode-failed'));
+    };
+    img.src = url;
+  });
 }
 
 export function SignPage() {
@@ -26,18 +91,29 @@ export function SignPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const curRef = useRef<Stroke | null>(null);
+  const pngInput = useRef<HTMLInputElement>(null);
+  const [pngKind, setPngKind] = useState<'sign' | 'stamp'>('sign');
   const [drawing, setDrawing] = useState(false);
   const [hasInk, setHasInk] = useState(false);
   const [lineW, setLineW] = useState(4);
-  const [sigUrl, setSigUrl] = useState('');
-  const [pos, setPos] = useState<'bl' | 'br' | 'tl' | 'tr'>('br');
-  const [sigScale, setSigScale] = useState(1);
-  const [pagePrev, setPagePrev] = useState<{ url: string; wPt: number; hPt: number } | null>(null);
+  const [library, setLibrary] = useState<LibItem[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [warn, setWarn] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [pages, setPages] = useState<SignPageInfo[]>([]);
+  const [placements, setPlacements] = useState<Record<number, Placement[]>>({});
+  const [selPlacement, setSelPlacement] = useState<{ pi: number; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const dragRef = useRef<null | { pi: number; key: number; sx: number; sy: number; ofx: number; ofy: number }>(null);
 
+  const selected = library.find((l) => l.id === selectedId) ?? null;
+  const placedCount = Object.values(placements).reduce((s, a) => s + a.length, 0);
+
+  // --- Рисование подписи ---
   const toCanvas = (e: React.PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
     return {
@@ -64,79 +140,210 @@ export function SignPage() {
     ctx.stroke();
   };
 
-  const redraw = () => {
-    const c = canvasRef.current!;
-    const ctx = c.getContext('2d')!;
-    ctx.clearRect(0, 0, c.width, c.height);
-    for (const s of strokesRef.current) paintStroke(ctx, s);
-  };
-
-  const syncSigUrl = () => {
-    const c = canvasRef.current;
-    if (c) setSigUrl(strokesRef.current.length > 0 ? c.toDataURL('image/png') : '');
-  };
-
   const clear = () => {
     strokesRef.current = [];
     curRef.current = null;
     setHasInk(false);
-    setResult(null);
-    redraw();
-    setSigUrl('');
+    const c = canvasRef.current;
+    if (c) c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
   };
 
   const undo = () => {
     strokesRef.current.pop();
     setHasInk(strokesRef.current.length > 0);
-    setResult(null);
-    redraw();
-    syncSigUrl();
+    const c = canvasRef.current;
+    if (c) {
+      const ctx = c.getContext('2d')!;
+      ctx.clearRect(0, 0, c.width, c.height);
+      for (const s of strokesRef.current) paintStroke(ctx, s);
+    }
   };
 
+  const addDrawnToLibrary = async () => {
+    const c = canvasRef.current;
+    if (!c || !hasInk) return;
+    const blob: Blob | null = await new Promise((res) => c.toBlob(res, 'image/png'));
+    if (!blob) return;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    try {
+      const dec = await decodeImage(bytes);
+      const item: LibItem = {
+        id: nextId++,
+        kind: 'sign',
+        name: `${t('signPage.tabSign')} ${library.filter((l) => l.kind === 'sign').length + 1}`,
+        url: dec.url,
+        bytes,
+        aspect: dec.w / Math.max(1, dec.h),
+        transparent: dec.transparent
+      };
+      setLibrary((p) => [...p, item]);
+      setSelectedId(item.id);
+      setWarn('');
+      clear();
+    } catch {
+      setWarn(t('failed') as string);
+    }
+  };
+
+  const addPngToLibrary = async (f: File | undefined) => {
+    if (!f) return;
+    if (isTooBig(f)) return setWarn(t('fileTooBig') as string);
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const dec = await decodeImage(bytes);
+      const item: LibItem = {
+        id: nextId++,
+        kind: pngKind,
+        name: f.name.replace(/\.[^.]+$/, '') || (pngKind === 'sign' ? t('signPage.tabSign') : t('signPage.tabStamp')) as string,
+        url: dec.url,
+        bytes,
+        aspect: dec.w / Math.max(1, dec.h),
+        transparent: dec.transparent
+      };
+      setLibrary((p) => [...p, item]);
+      setSelectedId(item.id);
+      setWarn(dec.transparent ? '' : (t('signPage.opaqueWarn') as string));
+    } catch {
+      setWarn(t('signPage.badPng') as string);
+    }
+  };
+
+  const removeItem = (id: number) => {
+    setLibrary((p) => p.filter((l) => l.id !== id));
+    if (selectedId === id) setSelectedId(null);
+    setPlacements((p) => {
+      const next: Record<number, Placement[]> = {};
+      for (const [pi, arr] of Object.entries(p)) {
+        const kept = arr.filter((pl) => pl.itemId !== id);
+        if (kept.length > 0) next[Number(pi)] = kept;
+      }
+      return next;
+    });
+    setSelPlacement(null);
+  };
+
+  // --- PDF ---
   const pickFile = async (f: File | undefined) => {
     if (!f) return;
     if (isTooBig(f)) {
       setFile(null);
-      setPagePrev(null);
+      setPages([]);
       return setError(t('fileTooBig') as string);
     }
     setError(null);
     setFile(f);
     setResult(null);
-    setPagePrev(null);
+    setPages([]);
+    setPlacements({});
+    setSelPlacement(null);
+    setLoading(true);
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
       const count = (await loadPdf(bytes)).getPageCount();
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
-      const pdfPage = await pdf.getPage(count);
-      const wPt = pdfPage.view[2] - pdfPage.view[0];
-      const hPt = pdfPage.view[3] - pdfPage.view[1];
-      const scale = Math.min(1.2, 480 / wPt);
-      const viewport = pdfPage.getViewport({ scale });
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      await pdfPage.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-      setPagePrev({ url: canvas.toDataURL('image/jpeg', 0.8), wPt, hPt });
+      const n = Math.min(count, 30);
+      const out: SignPageInfo[] = [];
+      for (let p = 1; p <= n; p++) {
+        const pg = await pdf.getPage(p);
+        const wPt = pg.view[2] - pg.view[0];
+        const hPt = pg.view[3] - pg.view[1];
+        const scale = Math.min(1.5, 640 / wPt);
+        const viewport = pg.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words: [], label: `page ${p}`, wPt, hPt });
+      }
+      setPages(out);
     } catch {
-      setPagePrev(null);
+      setError(t('failed') as string);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const place = async () => {
-    if (!file || !canvasRef.current) return;
-    setError(null);
-    if (!hasInk) return setError(t('signPage.drawFirst') as string);
+  // Тап по пустому месту — поставить выбранное; тянуть картинку — двигать
+  const tapPage = (pi: number, fx: number, fy: number) => {
+    if (!selected) {
+      setWarn(t('signPage.emptyLibrary') as string);
+      return;
+    }
+    const pl: Placement = { key: nextId++, itemId: selected.id, fx, fy, scale: 1 };
+    setPlacements((p) => ({ ...p, [pi]: [...(p[pi] ?? []), pl] }));
+    setSelPlacement({ pi, key: pl.key });
+    setResult(null);
+  };
+
+  const dragStart = (pi: number, key: number) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const cur = (placements[pi] ?? []).find((x) => x.key === key);
+    if (!cur) return;
+    dragRef.current = { pi, key, sx: e.clientX, sy: e.clientY, ofx: cur.fx, ofy: cur.fy };
+    setSelPlacement({ pi, key });
+  };
+
+  const dragMove = (pi: number) => (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    const host = (e.currentTarget as HTMLElement).parentElement?.parentElement;
+    if (!d || d.pi !== pi || !host) return;
+    const r = host.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    const fx = Math.min(1, Math.max(0, d.ofx + (e.clientX - d.sx) / r.width));
+    const fy = Math.min(1, Math.max(0, d.ofy + (e.clientY - d.sy) / r.height));
+    setPlacements((p) => ({ ...p, [pi]: (p[pi] ?? []).map((x) => (x.key === d.key ? { ...x, fx, fy } : x)) }));
+  };
+
+  const dragEnd = () => {
+    dragRef.current = null;
+  };
+
+  const selPl = selPlacement ? (placements[selPlacement.pi] ?? []).find((x) => x.key === selPlacement.key) ?? null : null;
+  const selItem = selPl ? library.find((l) => l.id === selPl.itemId) ?? null : null;
+
+  const setSelScale = (s: number) => {
+    if (!selPlacement) return;
+    setResult(null);
+    setPlacements((p) => ({
+      ...p,
+      [selPlacement.pi]: (p[selPlacement.pi] ?? []).map((x) => (x.key === selPlacement.key ? { ...x, scale: s } : x))
+    }));
+  };
+
+  const deleteSel = () => {
+    if (!selPlacement) return;
+    setResult(null);
+    setPlacements((p) => ({
+      ...p,
+      [selPlacement.pi]: (p[selPlacement.pi] ?? []).filter((x) => x.key !== selPlacement.key)
+    }));
+    setSelPlacement(null);
+  };
+
+  const placeAll = async () => {
+    if (!file) return;
+    if (placedCount === 0) return setError(t('signPage.nothingPlaced') as string);
     setBusy(true);
+    setError(null);
     try {
-      const blob: Blob = await new Promise((res, rej) =>
-        canvasRef.current!.toBlob((b) => (b ? res(b) : rej(new Error('encode-failed'))), 'image/png')
-      );
-      const png = new Uint8Array(await blob.arrayBuffer());
       const pdfBytes = new Uint8Array(await file.arrayBuffer());
-      const h = pos === 'bl' || pos === 'tl' ? 'left' : 'right';
-      const v = pos === 'tl' || pos === 'tr' ? 'top' : 'bottom';
-      setResult(await placeSignature(pdfBytes, png, { h, v, scale: sigScale }));
+      const stamps: Array<{ pageIdx: number; pngBytes: Uint8Array; x: number; y: number; w: number; h: number }> = [];
+      for (const [piStr, arr] of Object.entries(placements)) {
+        const pi = Number(piStr);
+        const info = pages[pi];
+        if (!info) continue;
+        for (const pl of arr) {
+          const item = library.find((l) => l.id === pl.itemId);
+          if (!item) continue;
+          const w = BASE_W_PT * pl.scale;
+          const h = w / Math.max(0.2, item.aspect);
+          const cx = pl.fx * info.wPt;
+          const cy = (1 - pl.fy) * info.hPt;
+          stamps.push({ pageIdx: pi, pngBytes: item.bytes, x: cx - w / 2, y: cy - h / 2, w, h });
+        }
+      }
+      setResult(await stampImages(pdfBytes, stamps));
     } catch {
       setError(t('failed') as string);
     } finally {
@@ -144,126 +351,214 @@ export function SignPage() {
     }
   };
 
-  // Позиция оверлея в превью — та же геометрия, что в placeSignature (поля 40/60pt)
-  const overlayStyle = (): React.CSSProperties | null => {
-    if (!pagePrev || !sigUrl) return null;
-    const { wPt, hPt } = pagePrev;
-    const wPct = Math.min(90, ((180 * sigScale) / wPt) * 100);
-    const style: React.CSSProperties = { width: `${wPct}%`, aspectRatio: `${CW} / ${CH}` };
-    if (pos === 'br' || pos === 'tr') style.right = `${(40 / wPt) * 100}%`;
-    else style.left = `${(40 / wPt) * 100}%`;
-    if (pos === 'bl' || pos === 'br') style.bottom = `${(60 / hPt) * 100}%`;
-    else style.top = `${(60 / hPt) * 100}%`;
-    return style;
-  };
+  const libCard = (kind: 'sign' | 'stamp') => (
+    <div className="grid grid-cols-3 gap-2">
+      {library.filter((l) => l.kind === kind).map((l) => (
+        <div
+          key={l.id}
+          onClick={() => setSelectedId(l.id)}
+          className={cn(
+            'relative cursor-pointer rounded-xl border-2 bg-white p-1.5 transition dark:bg-slate-800',
+            selectedId === l.id ? 'border-indigo-600' : 'border-transparent dark:border-slate-700'
+          )}
+        >
+          <div className="flex h-16 items-center justify-center overflow-hidden rounded-lg bg-[repeating-conic-gradient(#e2e8f0_0_25%,#fff_0_50%)] bg-[length:16px_16px] dark:bg-[repeating-conic-gradient(#1e293b_0_25%,#0f172a_0_50%)]">
+            <img src={l.url} alt={l.name} className="max-h-full max-w-full object-contain" />
+          </div>
+          <p className="mt-1 truncate text-center text-[11px] text-slate-500">{l.name}</p>
+          <button
+            onClick={(e) => { e.stopPropagation(); removeItem(l.id); }}
+            aria-label={t('remove') as string}
+            className="absolute right-0.5 top-0.5 grid h-7 w-7 place-items-center rounded-lg bg-white/90 text-xs text-slate-400 hover:text-red-500 dark:bg-slate-900/90"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      {library.filter((l) => l.kind === kind).length === 0 && (
+        <p className="col-span-3 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-400 dark:bg-slate-800">
+          {t('signPage.emptyKind')}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('signPage.title')}</h1>
       <p className="text-sm text-slate-500">{t('signPage.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => pickFile(f[0])} />
-      {file && <FileChip name={file.name} disabled={busy} onRemove={() => { setFile(null); setPagePrev(null); setResult(null); setError(null); }} />}
-      <div>
-        <p className="mb-1 text-sm font-semibold">{t('signPage.drawHere')}</p>
-        <canvas
-          ref={canvasRef}
-          width={CW}
-          height={CH}
-          className="h-52 w-full touch-none rounded-2xl border-2 border-dashed border-indigo-300 bg-white sm:h-60 dark:border-indigo-700"
-          onPointerDown={(e) => {
-            setDrawing(true);
-            setResult(null);
-            setError(null);
-            (e.target as HTMLElement).setPointerCapture(e.pointerId);
-            const s: Stroke = { pts: [toCanvas(e)], w: lineW };
-            curRef.current = s;
-            strokesRef.current.push(s);
-            paintStroke(canvasRef.current!.getContext('2d')!, s);
-            setHasInk(true);
-          }}
-          onPointerMove={(e) => {
-            if (!drawing || !curRef.current) return;
-            const ctx = canvasRef.current!.getContext('2d')!;
-            const cur = curRef.current;
-            const prev = cur.pts[cur.pts.length - 1];
-            const next = toCanvas(e);
-            cur.pts.push(next);
-            ctx.beginPath();
-            ctx.lineWidth = cur.w;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.strokeStyle = INK;
-            ctx.moveTo(prev.x, prev.y);
-            ctx.lineTo(next.x, next.y);
-            ctx.stroke();
-          }}
-          onPointerUp={() => { setDrawing(false); curRef.current = null; syncSigUrl(); }}
-          onPointerCancel={() => { setDrawing(false); curRef.current = null; }}
-          onPointerLeave={() => { setDrawing(false); curRef.current = null; }}
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {[3, 5, 8].map((w) => (
-          <button key={w} onClick={() => setLineW(w)} aria-pressed={lineW === w}
-            className={`min-h-[40px] rounded-xl px-3 py-1 text-sm font-semibold transition-colors ${lineW === w ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>
-            {t('signPage.lineW', { n: w })}
+
+      <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <p className="text-sm font-semibold">{t('signPage.librarySign')}</p>
+        <div className="mt-2">
+          <p className="mb-1 text-xs font-semibold text-slate-500">{t('signPage.drawHere')}</p>
+          <canvas
+            ref={canvasRef}
+            width={CW}
+            height={CH}
+            className="h-44 w-full touch-none rounded-2xl border-2 border-dashed border-indigo-300 bg-white sm:h-52 dark:border-indigo-700"
+            onPointerDown={(e) => {
+              setDrawing(true);
+              setWarn('');
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              const s: Stroke = { pts: [toCanvas(e)], w: lineW };
+              curRef.current = s;
+              strokesRef.current.push(s);
+              paintStroke(canvasRef.current!.getContext('2d')!, s);
+              setHasInk(true);
+            }}
+            onPointerMove={(e) => {
+              if (!drawing || !curRef.current) return;
+              const ctx = canvasRef.current!.getContext('2d')!;
+              const cur = curRef.current;
+              const prev = cur.pts[cur.pts.length - 1];
+              const next = toCanvas(e);
+              cur.pts.push(next);
+              ctx.beginPath();
+              ctx.lineWidth = cur.w;
+              ctx.lineCap = 'round';
+              ctx.lineJoin = 'round';
+              ctx.strokeStyle = INK;
+              ctx.moveTo(prev.x, prev.y);
+              ctx.lineTo(next.x, next.y);
+              ctx.stroke();
+            }}
+            onPointerUp={() => { setDrawing(false); curRef.current = null; }}
+            onPointerCancel={() => { setDrawing(false); curRef.current = null; }}
+            onPointerLeave={() => { setDrawing(false); curRef.current = null; }}
+          />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {[3, 5, 8].map((w) => (
+            <button key={w} onClick={() => setLineW(w)} aria-pressed={lineW === w}
+              className={`min-h-[40px] rounded-xl px-3 py-1 text-sm font-semibold transition-colors ${lineW === w ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>
+              {t('signPage.lineW', { n: w })}
+            </button>
+          ))}
+          <button onClick={undo} disabled={!hasInk} className="min-h-[40px] rounded-xl bg-slate-200 px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 dark:bg-slate-800">{t('signPage.undo')}</button>
+          <button onClick={clear} disabled={!hasInk} className="min-h-[40px] rounded-xl bg-slate-200 px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 dark:bg-slate-800">{t('signPage.clearSign')}</button>
+          <button onClick={addDrawnToLibrary} disabled={!hasInk} className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40">
+            {t('signPage.toLibrary')}
           </button>
-        ))}
-        <button onClick={undo} disabled={!hasInk} className="min-h-[40px] rounded-xl bg-slate-200 px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 dark:bg-slate-800">{t('signPage.undo')}</button>
-        <button onClick={clear} disabled={!hasInk} className="min-h-[40px] rounded-xl bg-slate-200 px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 dark:bg-slate-800">{t('signPage.clearSign')}</button>
+        </div>
+        <div className="mt-3">{libCard('sign')}</div>
       </div>
-      <button onClick={place} disabled={!file || !hasInk || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
-        {busy ? t('processing') : t('signPage.place')}
-      </button>
-      {pagePrev && (
-        <div className="animate-enter rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <p className="mb-2 text-sm font-semibold">{t('signPage.preview')}</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="mb-1 text-xs font-semibold text-slate-500">{t('signPage.position')}</p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(['tl', 'tr', 'bl', 'br'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPos(p)}
-                    aria-pressed={pos === p}
-                    className={cn(
-                      'min-h-[40px] rounded-lg border px-2 text-xs font-semibold transition-colors dark:border-slate-700',
-                      pos === p ? 'border-indigo-600 bg-indigo-600 text-white' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800'
-                    )}
-                  >
-                    {t(`signPage.pos_${p}`)}
-                  </button>
-                ))}
-              </div>
-              <p className="mb-1 mt-3 text-xs font-semibold text-slate-500">{t('signPage.size')}</p>
-              <div className="flex gap-1.5">
-                {[0.7, 1, 1.4].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSigScale(s)}
-                    aria-pressed={sigScale === s}
-                    className={cn(
-                      'min-h-[40px] flex-1 rounded-lg text-xs font-semibold transition-colors',
-                      sigScale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'
-                    )}
-                  >
-                    ×{s}
-                  </button>
-                ))}
-              </div>
+
+      <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <p className="text-sm font-semibold">{t('signPage.libraryStamp')}</p>
+        <p className="mt-1 text-xs text-slate-500">{t('signPage.stampNote')}</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button onClick={() => { setPngKind('sign'); pngInput.current?.click(); }} className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 px-3 text-sm font-semibold text-indigo-700 dark:border-indigo-700 dark:text-indigo-300">
+            <Upload className="h-4 w-4" /> {t('signPage.uploadSign')}
+          </button>
+          <button onClick={() => { setPngKind('stamp'); pngInput.current?.click(); }} className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 px-3 text-sm font-semibold text-indigo-700 dark:border-indigo-700 dark:text-indigo-300">
+            <Upload className="h-4 w-4" /> {t('signPage.uploadStamp')}
+          </button>
+        </div>
+        <input ref={pngInput} type="file" accept="image/png,image/*" className="hidden" onChange={(e) => { addPngToLibrary(e.target.files?.[0]); e.target.value = ''; }} />
+        <div className="mt-3">{libCard('stamp')}</div>
+        <p className="mt-2 text-[11px] text-slate-400">{t('signPage.libraryNote')}</p>
+      </div>
+
+      {warn && <p className="animate-enter text-sm text-amber-600 dark:text-amber-400">{warn}</p>}
+
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy || loading} subtitleKey="dropSubtitlePdf" onFiles={(f) => pickFile(f[0])} />
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {file && <FileChip name={file.name} meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined} disabled={busy} onRemove={() => { setFile(null); setPages([]); setPlacements({}); setSelPlacement(null); setResult(null); setError(null); setOverlayOpen(false); }} />}
+      {loading && <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />}
+
+      {pages.length > 0 && (
+        <button
+          onClick={() => setOverlayOpen(true)}
+          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99]"
+        >
+          <BookOpen className="h-5 w-5" /> {t('signPage.openViewer')} · {t('signPage.placed', { n: placedCount })}
+        </button>
+      )}
+      {result && <ResultCard title={t('ready') as string} bytes={result} fileName="signed.pdf" />}
+
+      {overlayOpen && pages.length > 0 && (
+        <PdfOverlay
+          title={file?.name ?? (t('signPage.title') as string)}
+          pages={pages}
+          onClose={() => setOverlayOpen(false)}
+          onPageTap={tapPage}
+          tapHint={selected ? (t('signPage.tapPlaceHint', { name: selected.name }) as string) : (t('signPage.emptyLibrary') as string)}
+          pageOverlay={(pi) => (
+            <div className="absolute inset-0" onPointerMove={dragMove(pi)} onPointerUp={dragEnd} onPointerCancel={dragEnd}>
+              {(placements[pi] ?? []).map((pl) => {
+                const item = library.find((l) => l.id === pl.itemId);
+                if (!item) return null;
+                const wPct = Math.min(95, ((BASE_W_PT * pl.scale) / pages[pi].wPt) * 100);
+                const sel = selPlacement?.pi === pi && selPlacement?.key === pl.key;
+                return (
+                  <img
+                    key={pl.key}
+                    src={item.url}
+                    alt={item.name}
+                    draggable={false}
+                    onPointerDown={dragStart(pi, pl.key)}
+                    className={`absolute touch-none select-none ${sel ? 'ring-2 ring-indigo-400' : ''}`}
+                    style={{
+                      left: `${pl.fx * 100}%`,
+                      top: `${pl.fy * 100}%`,
+                      width: `${wPct}%`,
+                      aspectRatio: `${item.aspect}`,
+                      transform: 'translate(-50%, -50%)'
+                    }}
+                  />
+                );
+              })}
             </div>
-            <div className="relative mx-auto w-full max-w-[240px] overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800" style={{ aspectRatio: `${pagePrev.wPt} / ${pagePrev.hPt}` }}>
-              <img src={pagePrev.url} alt="last page" className="absolute inset-0 h-full w-full" />
-              {overlayStyle() && (
-                <img src={sigUrl} alt="" className="absolute" style={overlayStyle()!} />
+          )}
+          toolbar={
+            <div className="space-y-2 rounded-xl bg-white/10 p-2">
+              <div className="flex items-center gap-2">
+                {selected ? (
+                  <span className="min-w-0 flex-1 truncate text-sm text-white">✒ {selected.name}</span>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-300">{t('signPage.emptyLibrary')}</span>
+                )}
+                <button
+                  onClick={() => setOverlayOpen(false)}
+                  className="min-h-[40px] shrink-0 rounded-xl bg-white/15 px-3 text-xs font-semibold text-white"
+                >
+                  {t('signPage.toLibraryBtn')}
+                </button>
+              </div>
+              {selPl && selItem && (
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{selItem.name} · ×{selPl.scale.toFixed(1)}</span>
+                  <input
+                    type="range" min={0.3} max={2.5} step={0.1} value={selPl.scale}
+                    onChange={(e) => setSelScale(Number(e.target.value))}
+                    aria-label={t('signPage.size') as string}
+                    className="min-w-0 flex-1 accent-indigo-400"
+                  />
+                  <button onClick={deleteSel} aria-label={t('remove') as string} className="grid min-h-[40px] min-w-[40px] shrink-0 place-items-center rounded-xl bg-white/15 text-white">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={placeAll}
+                disabled={busy || placedCount === 0}
+                className="min-h-[48px] w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50"
+              >
+                {busy ? t('processing') : `${t('signPage.place')} · ${placedCount}`}
+              </button>
+              {result && (
+                <button
+                  onClick={() => downloadBytes(result, 'signed.pdf', 'application/pdf')}
+                  className="min-h-[44px] w-full rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white"
+                >
+                  {t('download')}
+                </button>
               )}
             </div>
-          </div>
-        </div>
+          }
+        />
       )}
-      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
-      {result && <ResultCard title={t('ready') as string} bytes={result} fileName="signed.pdf" />}
     </div>
   );
 }

@@ -56,6 +56,123 @@ export async function repairPdf(bytes: Uint8Array): Promise<{ data: Uint8Array; 
   return { data: await src.save({ useObjectStreams: true }), pages };
 }
 
+export interface RecompressOptions {
+  /** Качество JPEG 0..1 (canvas toBlob). */
+  quality: number;
+  /** Максимальная сторона картинки в px — большее даунскейлится. */
+  maxDim: number;
+  /** Перегонять крупные Flate-PNG без прозрачности в JPEG. */
+  pngToJpeg: boolean;
+}
+
+export interface RecompressTranscoders {
+  /** JPEG→JPEG (декодирование + даунскейл + пережатие — на стороне UI через canvas). */
+  jpeg: (bytes: Uint8Array, opts: { quality: number; maxDim: number }) => Promise<{ bytes: Uint8Array; w: number; h: number } | null>;
+  /** Сырые RGB/Gray пиксели → JPEG (на стороне UI через canvas). */
+  raw: (raw: { data: Uint8Array; w: number; h: number; components: 1 | 3 }, quality: number) => Promise<{ bytes: Uint8Array; w: number; h: number } | null>;
+}
+
+export interface RecompressReport {
+  processed: number;
+  skipped: number;
+  savedBytes: number;
+}
+
+/**
+ * Рекомпрессия встроенных картинок БЕЗ перерисовки страниц (текст остаётся текстом):
+ * - DCTDecode (JPEG): пережатие через инжектированный транскодер;
+ * - FlateDecode RGB/Gray 8bit без предикторов: в JPEG (опционально).
+ * Поток XObject заменяется целиком (новый словарь + байты), ссылки страниц не трогаем.
+ */
+export async function recompressPdf(
+  bytes: Uint8Array,
+  opts: RecompressOptions,
+  t: RecompressTranscoders
+): Promise<{ data: Uint8Array; report: RecompressReport }> {
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const deref = (obj: unknown): unknown => (obj instanceof PDFRef ? src.context.lookup(obj) : obj);
+  const nameOf = (o: { toString(): string }): string => {
+    const s = o.toString();
+    return s.startsWith('/') ? s.slice(1) : s;
+  };
+  const report: RecompressReport = { processed: 0, skipped: 0, savedBytes: 0 };
+
+  for (const page of src.getPages()) {
+    const res = page.node.Resources();
+    const xobj = deref(res?.get(PDFName.of('XObject')));
+    if (!(xobj instanceof PDFDict)) continue;
+    for (const key of xobj.keys()) {
+      let ref: unknown;
+      let stream: unknown;
+      try {
+        ref = xobj.get(key);
+        stream = deref(ref);
+      } catch {
+        continue;
+      }
+      // Подменяем только непрямые объекты — прямые трогать опасно
+      if (!(ref instanceof PDFRef) || !(stream instanceof PDFRawStream)) {
+        report.skipped++;
+        continue;
+      }
+      const subtype = deref(stream.dict.get(PDFName.of('Subtype')));
+      if (!subtype || nameOf(subtype as { toString(): string }) !== 'Image') continue;
+      // Картинки с маской прозрачности не трогаем — убьём альфу
+      if (stream.dict.get(PDFName.of('SMask')) || stream.dict.get(PDFName.of('Mask'))) {
+        report.skipped++;
+        continue;
+      }
+      const filterObj = deref(stream.dict.get(PDFName.of('Filter')));
+      const filters: string[] = [];
+      if (filterObj instanceof PDFName) filters.push(nameOf(filterObj));
+      else if (filterObj instanceof PDFArray) {
+        for (let i = 0; i < filterObj.size(); i++) {
+          const f = deref(filterObj.get(i));
+          if (f instanceof PDFName) filters.push(nameOf(f));
+        }
+      }
+      try {
+        let fresh: { bytes: Uint8Array; w: number; h: number } | null = null;
+        if (filters.includes('DCTDecode')) {
+          const cs = deref(stream.dict.get(PDFName.of('ColorSpace')));
+          const csName = cs instanceof PDFName ? nameOf(cs) : '';
+          // CMYK и прочие экзотические схемы canvas может переврать — пропускаем
+          if (csName !== 'DeviceRGB' && csName !== 'DeviceGray') {
+            report.skipped++;
+            continue;
+          }
+          fresh = await t.jpeg(stream.contents, { quality: opts.quality, maxDim: opts.maxDim });
+        } else if (filters.includes('FlateDecode') && opts.pngToJpeg) {
+          const parsed = decodeFlateImage(src, stream);
+          if (parsed) fresh = await t.raw({ data: parsed.data, w: parsed.width, h: parsed.height, components: parsed.components }, opts.quality);
+        } else {
+          report.skipped++;
+          continue;
+        }
+        if (!fresh || fresh.bytes.length >= stream.contents.length) {
+          report.skipped++;
+          continue;
+        }
+        const dict = src.context.obj({});
+        dict.set(PDFName.of('Type'), PDFName.of('XObject'));
+        dict.set(PDFName.of('Subtype'), PDFName.of('Image'));
+        dict.set(PDFName.of('Width'), PDFNumber.of(Math.max(1, Math.round(fresh.w))));
+        dict.set(PDFName.of('Height'), PDFNumber.of(Math.max(1, Math.round(fresh.h))));
+        dict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
+        dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
+        dict.set(PDFName.of('Filter'), PDFName.of('DCTDecode'));
+        const replacement = PDFRawStream.of(dict, fresh.bytes);
+        src.context.assign(ref, replacement);
+        report.processed++;
+        report.savedBytes += stream.contents.length - fresh.bytes.length;
+      } catch {
+        report.skipped++;
+      }
+    }
+  }
+  return { data: await src.save({ useObjectStreams: true }), report };
+}
+
 export interface BatesOptions {
   prefix: string;
   start: number;
@@ -210,13 +327,51 @@ export type Shape =
   | { kind: 'ellipse'; cx: number; cy: number; rx: number; ry: number; color: ShapeColor; width: number }
   | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; color: ShapeColor; width: number }
   | { kind: 'arrow'; x1: number; y1: number; x2: number; y2: number; color: ShapeColor; width: number }
-  | { kind: 'highlight'; x: number; y: number; w: number; h: number }
-  | { kind: 'redact'; x: number; y: number; w: number; h: number };
+  | { kind: 'arrow2'; x1: number; y1: number; x2: number; y2: number; color: ShapeColor; width: number }
+  | { kind: 'star'; cx: number; cy: number; r: number; color: ShapeColor; width: number }
+  | { kind: 'pen'; pts: Array<[number, number]>; color: ShapeColor; width: number }
+  | { kind: 'text'; x: number; y: number; str: string; size: number; color: ShapeColor }
+  | { kind: 'check'; x1: number; y1: number; x2: number; y2: number; color: ShapeColor; width: number }
+  | { kind: 'highlight'; x: number; y: number; w: number; h: number; color: ShapeColor }
+  | { kind: 'redact'; x: number; y: number; w: number; h: number; color: ShapeColor };
 
 /** Вжигание фигур в страницы. Координаты — пункты PDF (начало слева-снизу). */
 export async function drawShapes(bytes: Uint8Array, perPage: Record<number, Shape[]>): Promise<Uint8Array> {
   const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const { rgb: toRgb } = await import('pdf-lib');
+  let font: Awaited<ReturnType<PDFDocument['embedFont']>> | null = null;
+  const textFont = async () => {
+    if (!font) font = await src.embedFont(StandardFonts.HelveticaBold);
+    return font;
+  };
+  const head = (
+    p: ReturnType<PDFDocument['getPage']>,
+    x: number,
+    y: number,
+    ang: number,
+    L: number,
+    thickness: number,
+    c: ReturnType<typeof toRgb>
+  ) => {
+    for (const da of [Math.PI / 6, -Math.PI / 6]) {
+      p.drawLine({
+        start: { x, y },
+        end: { x: x - L * Math.cos(ang + da), y: y - L * Math.sin(ang + da) },
+        thickness,
+        color: c,
+        opacity: 0.95
+      });
+    }
+  };
+  const starPoints = (cx: number, cy: number, r: number): Array<[number, number]> => {
+    const pts: Array<[number, number]> = [];
+    for (let i = 0; i < 10; i++) {
+      const rr = i % 2 === 0 ? r : r * 0.45;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]);
+    }
+    return pts;
+  };
   for (const [pageIdx, shapes] of Object.entries(perPage)) {
     const p = src.getPages()[Number(pageIdx)];
     if (!p) continue;
@@ -230,11 +385,11 @@ export async function drawShapes(bytes: Uint8Array, perPage: Record<number, Shap
           height: s.h,
           borderColor: fill ? undefined : toRgb(s.color.r, s.color.g, s.color.b),
           borderWidth: fill ? 0 : s.width,
-          color: fill ? toRgb(0, 0, 0) : undefined,
+          color: fill ? toRgb(s.color.r, s.color.g, s.color.b) : undefined,
           opacity: fill ? 1 : 0.9
         });
       } else if (s.kind === 'highlight') {
-        p.drawRectangle({ x: s.x, y: s.y, width: s.w, height: s.h, color: toRgb(1, 0.95, 0.4), opacity: 0.4, borderWidth: 0 });
+        p.drawRectangle({ x: s.x, y: s.y, width: s.w, height: s.h, color: toRgb(s.color.r, s.color.g, s.color.b), opacity: 0.4, borderWidth: 0 });
       } else if (s.kind === 'ellipse') {
         p.drawEllipse({
           x: s.cx,
@@ -245,21 +400,39 @@ export async function drawShapes(bytes: Uint8Array, perPage: Record<number, Shap
           borderWidth: s.width,
           opacity: 0.9
         });
+      } else if (s.kind === 'star') {
+        const c = toRgb(s.color.r, s.color.g, s.color.b);
+        const pts = starPoints(s.cx, s.cy, Math.max(4, s.r));
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          p.drawLine({ start: { x: a[0], y: a[1] }, end: { x: b[0], y: b[1] }, thickness: s.width, color: c, opacity: 0.95 });
+        }
+      } else if (s.kind === 'pen') {
+        const c = toRgb(s.color.r, s.color.g, s.color.b);
+        for (let i = 1; i < s.pts.length; i++) {
+          p.drawLine({ start: { x: s.pts[i - 1][0], y: s.pts[i - 1][1] }, end: { x: s.pts[i][0], y: s.pts[i][1] }, thickness: s.width, color: c, opacity: 0.95 });
+        }
+      } else if (s.kind === 'text') {
+        const f = await textFont();
+        p.drawText(s.str.slice(0, 200), { x: s.x, y: s.y, size: Math.min(72, Math.max(8, s.size)), font: f, color: toRgb(s.color.r, s.color.g, s.color.b) });
+      } else if (s.kind === 'check') {
+        const c = toRgb(s.color.r, s.color.g, s.color.b);
+        const mx = s.x1 + (s.x2 - s.x1) * 0.35;
+        const my = s.y1 + (s.y2 - s.y1) * 0.55;
+        p.drawLine({ start: { x: s.x1, y: s.y1 }, end: { x: mx, y: my }, thickness: s.width, color: c, opacity: 0.95 });
+        p.drawLine({ start: { x: mx, y: my }, end: { x: s.x2, y: s.y2 }, thickness: s.width, color: c, opacity: 0.95 });
       } else {
         const c = toRgb(s.color.r, s.color.g, s.color.b);
         p.drawLine({ start: { x: s.x1, y: s.y1 }, end: { x: s.x2, y: s.y2 }, thickness: s.width, color: c, opacity: 0.95 });
-        if (s.kind === 'arrow') {
+        const L = Math.max(10, s.width * 5);
+        if (s.kind === 'arrow' || s.kind === 'arrow2') {
           const ang = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
-          const L = Math.max(10, s.width * 5);
-          for (const da of [Math.PI / 6, -Math.PI / 6]) {
-            p.drawLine({
-              start: { x: s.x2, y: s.y2 },
-              end: { x: s.x2 - L * Math.cos(ang + da), y: s.y2 - L * Math.sin(ang + da) },
-              thickness: s.width,
-              color: c,
-              opacity: 0.95
-            });
-          }
+          head(p, s.x2, s.y2, ang, L, s.width, c);
+        }
+        if (s.kind === 'arrow2') {
+          const ang = Math.atan2(s.y1 - s.y2, s.x1 - s.x2);
+          head(p, s.x1, s.y1, ang, L, s.width, c);
         }
       }
     }

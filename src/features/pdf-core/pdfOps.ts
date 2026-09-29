@@ -280,6 +280,29 @@ export async function fillForm(
   return src.save();
 }
 
+export interface ImageStamp {
+  pageIdx: number;
+  pngBytes: Uint8Array;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Вжигание произвольных PNG (подписи, печати) в заданные места страниц. */
+export async function stampImages(bytes: Uint8Array, stamps: ImageStamp[]): Promise<Uint8Array> {
+  const src = await loadPdf(bytes);
+  const pages = src.getPages();
+  for (const s of stamps) {
+    const p = pages[s.pageIdx];
+    if (!p) continue;
+    if (s.w <= 0 || s.h <= 0) continue;
+    const png = await src.embedPng(s.pngBytes);
+    p.drawImage(png, { x: s.x, y: s.y, width: s.w, height: s.h });
+  }
+  return src.save();
+}
+
 export async function placeSignature(
   bytes: Uint8Array,
   pngBytes: Uint8Array,

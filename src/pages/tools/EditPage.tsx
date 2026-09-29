@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import * as pdfjs from 'pdfjs-dist';
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { BookOpen } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
 import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
+import { PdfOverlay, OverlayPageData } from '../../components/PdfOverlay';
 import { stampText, stampTextAt, setMetadata, loadPdf } from '../../features/pdf-core/pdfOps';
 import { stampBates } from '../../features/pdf-core/pages';
-import { isTooBig } from '../../lib/utils';
+import { isTooBig, downloadBytes } from '../../lib/utils';
 import { loadSetting, saveSetting } from '../../lib/settings';
+import { wordsToFractions } from '../../lib/pageWords';
 import { cn } from '../../lib/utils';
+
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 type H = 'left' | 'center' | 'right';
 type V = 'top' | 'middle' | 'bottom';
@@ -57,6 +64,8 @@ export function EditPage() {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
+  const [overlayPages, setOverlayPages] = useState<OverlayPageData[]>([]);
+  const [overlayOpen, setOverlayOpen] = useState(false);
   const openSeq = useRef(0);
 
   // Настройки изменились — показанный ранее результат и ошибки им уже не соответствуют
@@ -72,20 +81,50 @@ export function EditPage() {
       setFile(null);
       setPageCount(null);
       setResult(null);
+      setOverlayPages([]);
       return setError(t('fileTooBig') as string);
     }
     const seq = ++openSeq.current;
     setFile(f);
     setResult(null);
     setError(null);
+    setOverlayPages([]);
     try {
-      const doc = await loadPdf(new Uint8Array(await f.arrayBuffer()));
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const doc = await loadPdf(bytes);
       if (openSeq.current !== seq) return; // пока грузился, выбрали другой файл
       setPageCount(doc.getPageCount());
+      // Страницы для окна: тап ставит штамп прямо в нужное место
+      const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+      const n = Math.min(doc.getPageCount(), 30);
+      const out: OverlayPageData[] = [];
+      for (let p = 1; p <= n; p++) {
+        if (openSeq.current !== seq) return;
+        const pg = await pdf.getPage(p);
+        const viewport = pg.getViewport({ scale: 1.5 });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+        const words = await wordsToFractions(pg, viewport, canvas.width, canvas.height);
+        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words, label: `page ${p}` });
+      }
+      if (openSeq.current !== seq) return;
+      setOverlayPages(out);
     } catch {
       if (openSeq.current !== seq) return;
       setPageCount(null);
     }
+  };
+
+  // Тап по странице в окне: страница + позиция штампа выбираются сами
+  const tapToPlace = (pi: number, fx: number, fy: number) => {
+    setPage(String(pi + 1));
+    setAllPages(false);
+    setPos({
+      h: fx < 0.33 ? 'left' : fx > 0.66 ? 'right' : 'center',
+      v: fy < 0.33 ? 'top' : fy > 0.66 ? 'bottom' : 'middle'
+    });
   };
 
   // null — ввод непонятен или номер вне диапазона: молча штамповать весь документ нельзя
@@ -135,8 +174,16 @@ export function EditPage() {
           name={file.name}
           meta={pageCount !== null ? `${pageCount} ${t('pagesShort')}` : undefined}
           disabled={busy}
-          onRemove={() => { setFile(null); setPageCount(null); setResult(null); setError(null); }}
+          onRemove={() => { setFile(null); setPageCount(null); setResult(null); setError(null); setOverlayPages([]); setOverlayOpen(false); }}
         />
+      )}
+      {overlayPages.length > 0 && (
+        <button
+          onClick={() => setOverlayOpen(true)}
+          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99]"
+        >
+          <BookOpen className="h-5 w-5" /> {t('editPage.openViewer')}
+        </button>
       )}
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -251,6 +298,37 @@ export function EditPage() {
         {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="edited.pdf" />}
+      {overlayOpen && overlayPages.length > 0 && (
+        <PdfOverlay
+          title={file?.name ?? (t('editPage.title') as string)}
+          pages={overlayPages}
+          onClose={() => setOverlayOpen(false)}
+          onPageTap={tapToPlace}
+          tapHint={t('editPage.tapHint') as string}
+          toolbar={
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white/10 p-2">
+              <span className="min-w-0 flex-1 truncate text-sm text-white">
+                {text || 'ALL PDF'} · {allPages ? t('editPage.allPages') : `${t('editPage.page')} ${page || '…'} · ${t(`editPage.pos_${pos.h}`)} ${t(`editPage.posV_${pos.v}`)}`}
+              </span>
+              <button
+                onClick={() => apply('stamp')}
+                disabled={!file || busy}
+                className="min-h-[44px] rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50"
+              >
+                {busy && active === 'stamp' ? t('processing') : t('editPage.addText')}
+              </button>
+              {result && (
+                <button
+                  onClick={() => downloadBytes(result, 'edited.pdf', 'application/pdf')}
+                  className="min-h-[44px] rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-[0.98]"
+                >
+                  {t('download')}
+                </button>
+              )}
+            </div>
+          }
+        />
+      )}
     </div>
   );
 }

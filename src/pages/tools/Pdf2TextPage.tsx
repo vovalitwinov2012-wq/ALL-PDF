@@ -31,7 +31,8 @@ export function Pdf2TextPage() {
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
         const content = await page.getTextContent();
-        out += `\n\n${t('convertPage.pageSep', { n: p })}\n` + content.items.map((it: unknown) => (it as { str: string }).str).join(' ');
+        const text = content.items.map((it: unknown) => (it as { str: string }).str).join(' ').trim();
+        if (text) out += (out ? '\n\n' : '') + text;
         setProgress([p, pdf.numPages]);
       }
       const trimmed = out.trim();

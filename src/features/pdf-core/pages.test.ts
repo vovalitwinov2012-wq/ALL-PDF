@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
-import { cropPdf, splitEvery, repairPdf, stampBates, extractImages, organizePdf, drawShapes } from './pages';
+import { PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib';
+import { deflate } from 'pako';
+import { cropPdf, splitEvery, repairPdf, stampBates, extractImages, organizePdf, drawShapes, recompressPdf } from './pages';
 import { diffLines, countChanges } from './diff';
 import { itemsToCsv } from './tables';
 
@@ -58,8 +59,13 @@ describe('pages', () => {
         { kind: 'ellipse', cx: 200, cy: 200, rx: 30, ry: 20, color: { r: 0, g: 0, b: 1 }, width: 3 },
         { kind: 'line', x1: 0, y1: 0, x2: 50, y2: 50, color: { r: 0, g: 0, b: 0 }, width: 2 },
         { kind: 'arrow', x1: 0, y1: 100, x2: 100, y2: 100, color: { r: 0, g: 0, b: 0 }, width: 2 },
-        { kind: 'highlight', x: 10, y: 300, w: 200, h: 20 },
-        { kind: 'redact', x: 10, y: 400, w: 200, h: 20 }
+        { kind: 'highlight', x: 10, y: 300, w: 200, h: 20, color: { r: 1, g: 0.85, b: 0.2 } },
+        { kind: 'redact', x: 10, y: 400, w: 200, h: 20, color: { r: 0, g: 0, b: 0 } },
+        { kind: 'star', cx: 300, cy: 300, r: 25, color: { r: 1, g: 0, b: 0 }, width: 2 },
+        { kind: 'arrow2', x1: 0, y1: 200, x2: 100, y2: 200, color: { r: 0, g: 0, b: 0 }, width: 2 },
+        { kind: 'pen', pts: [[0, 0], [10, 10], [20, 5]], color: { r: 0, g: 0, b: 0 }, width: 2 },
+        { kind: 'text', x: 50, y: 500, str: 'Hi', size: 18, color: { r: 0, g: 0, b: 0 } },
+        { kind: 'check', x1: 0, y1: 600, x2: 60, y2: 660, color: { r: 0, g: 0.6, b: 0 }, width: 3 }
       ]
     });
     expect((await PDFDocument.load(out)).getPageCount()).toBe(1);
@@ -116,7 +122,68 @@ describe('tables', () => {
   });
 
   it('quotes cells with semicolons', () => {
-    const csv = itemsToCsv([{ str: 'a;b', x: 10, y: 100 }]);
+    const csv = itemsToCsv([{ str: 'a;b', x: 200, y: 100 }]);
     expect(csv).toBe('"a;b"');
+  });
+});
+
+describe('recompressPdf', () => {
+  // PDF с рукотворным Flate-RGB XObject 4x4: проверяем механику подмены потока
+  async function pdfWithFlateImage(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([100, 100]);
+    const w = 4;
+    const h = 4;
+    const pixels = new Uint8Array(w * h * 3).fill(200);
+    const dict = doc.context.obj({});
+    dict.set(PDFName.of('Type'), PDFName.of('XObject'));
+    dict.set(PDFName.of('Subtype'), PDFName.of('Image'));
+    dict.set(PDFName.of('Width'), PDFNumber.of(w));
+    dict.set(PDFName.of('Height'), PDFNumber.of(h));
+    dict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
+    dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
+    dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    const stream = PDFRawStream.of(dict, deflate(pixels));
+    const ref = doc.context.register(stream);
+    const res = doc.context.obj({});
+    const xo = doc.context.obj({});
+    xo.set(PDFName.of('Im1'), ref);
+    res.set(PDFName.of('XObject'), xo);
+    page.node.set(PDFName.of('Resources'), res);
+    return doc.save();
+  }
+
+  const stubT = {
+    jpeg: async () => null as never,
+    raw: async () => ({ bytes: new Uint8Array([10, 20, 30]), w: 4, h: 4 })
+  };
+
+  it('replaces Flate image stream with DCT and keeps document valid', async () => {
+    const src = await pdfWithFlateImage();
+    const { data, report } = await recompressPdf(src, { quality: 0.6, maxDim: 2000, pngToJpeg: true }, stubT);
+    expect(report.processed).toBe(1);
+    expect(report.savedBytes).toBeGreaterThan(0);
+    const doc = await PDFDocument.load(data);
+    expect(doc.getPageCount()).toBe(1);
+    const found = await extractImages(data);
+    expect(found.length).toBe(1);
+    expect(found[0].kind).toBe('jpg');
+    expect(found[0].data).toEqual(new Uint8Array([10, 20, 30]));
+  });
+
+  it('skips when transcoder returns nothing bigger-or-equal', async () => {
+    const src = await pdfWithFlateImage();
+    const { report } = await recompressPdf(
+      src,
+      { quality: 0.6, maxDim: 2000, pngToJpeg: true },
+      { jpeg: async () => null, raw: async () => null }
+    );
+    expect(report.processed).toBe(0);
+    expect(report.skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not touch pdfs without images', async () => {
+    const { report } = await recompressPdf(await makePdf(1), { quality: 0.6, maxDim: 2000, pngToJpeg: true }, stubT);
+    expect(report.processed).toBe(0);
   });
 });

@@ -1,120 +1,110 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { BookOpen } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
 import { FileChip } from '../../components/FileChip';
+import { ProgressBar } from '../../components/ProgressBar';
+import { PdfOverlay, OverlayPageData } from '../../components/PdfOverlay';
 import { isTooBig } from '../../lib/utils';
-import { loadSetting, saveSetting } from '../../lib/settings';
+import { wordsToFractions } from '../../lib/pageWords';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-const MAX_PAGES = 20;
+const MAX_PAGES = 50;
+const RENDER_SCALE = 2;
 
 export function ViewerPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
-  const [urls, setUrls] = useState<string[]>([]);
+  const [pages, setPages] = useState<OverlayPageData[]>([]);
   const [truncated, setTruncated] = useState(false);
-  const [query, setQuery] = useState('');
-  const [hits, setHits] = useState<number[]>([]);
-  const [scale, setScale] = useState(() => {
-    const s = loadSetting('viewer.scale', 1.5);
-    return [1, 1.5, 2].includes(s) ? s : 1.5;
-  });
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<[number, number] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
 
-  const open = async (f: File, zoom = scale, q = query) => {
+  const open = async (f: File | undefined) => {
+    if (!f) return;
     if (isTooBig(f)) {
       setFile(null);
-      setUrls([]);
+      setPages([]);
       return setError(t('fileTooBig') as string);
     }
     setFile(f);
     setBusy(true);
     setError(null);
+    setProgress([0, 1]);
     try {
       const buf = await f.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
       const n = Math.min(pdf.numPages, MAX_PAGES);
       setTruncated(pdf.numPages > MAX_PAGES);
-      const out: string[] = [];
-      const found: number[] = [];
+      setProgress([0, n]);
+      const out: OverlayPageData[] = [];
       for (let p = 1; p <= n; p++) {
         const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale: zoom });
+        const viewport = page.getViewport({ scale: RENDER_SCALE });
         const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
         await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        out.push(canvas.toDataURL('image/jpeg', 0.85));
-        if (q) {
-          const txt = await page.getTextContent();
-          const s = txt.items.map((it: unknown) => (it as { str: string }).str).join(' ').toLowerCase();
-          if (s.includes(q.toLowerCase())) found.push(p);
-        }
+        const words = await wordsToFractions(page, viewport, canvas.width, canvas.height);
+        out.push({
+          url: canvas.toDataURL('image/jpeg', 0.85),
+          aspect: canvas.width / canvas.height,
+          words,
+          label: `page ${p}`
+        });
+        setProgress([p, n]);
       }
-      setUrls(out);
-      setHits(found);
+      setPages(out);
+      setOverlayOpen(true);
     } catch {
-      setUrls([]);
+      setPages([]);
       setError(t('failed') as string);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
   const close = () => {
     setFile(null);
-    setUrls([]);
-    setHits([]);
-    setQuery('');
+    setPages([]);
     setTruncated(false);
     setError(null);
+    setOverlayOpen(false);
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('viewerPage.title')}</h1>
       <p className="text-xs text-slate-500">{t('viewerPage.hint', { n: MAX_PAGES })}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => { if (f[0]) open(f[0]); }} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => open(f[0])} />
       {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {file && <FileChip name={file.name} disabled={busy} onRemove={close} />}
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <input value={query} onChange={(e) => { setQuery(e.target.value); setHits([]); setError(null); }} placeholder={t('viewerPage.searchPh') as string}
-          className="w-full min-w-0 rounded-xl border px-3 py-2.5 sm:flex-1 dark:border-slate-700 dark:bg-slate-900" />
-        <div className="flex items-center gap-2">
-          {[1, 1.5, 2].map((s) => (
-            <button key={s} onClick={() => { setScale(s); saveSetting('viewer.scale', s); if (file) open(file, s); }} disabled={!file || busy} aria-pressed={scale === s}
-              className={`min-h-[40px] rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
-              {Math.round(s * 100)}%
-            </button>
-          ))}
-          <button onClick={() => file && open(file)} disabled={!file || busy} title={t('viewerPage.searchPh') as string} aria-label={t('viewerPage.searchPh') as string}
-            className="grid min-h-[40px] min-w-[48px] place-items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50">
-            {busy ? '…' : <Search className="h-4 w-4" />}
-          </button>
-        </div>
-      </div>
-      {hits.length > 0 && <p className="animate-enter text-sm text-emerald-600 dark:text-emerald-400">{t('viewerPage.found')}: {hits.join(', ')}</p>}
+      {busy && progress && <ProgressBar value={progress[0] / Math.max(1, progress[1])} label={`${t('processing')} ${progress[0]}/${progress[1]}`} />}
       {truncated && <p className="text-sm text-amber-600 dark:text-amber-400">{t('viewerPage.truncated', { n: MAX_PAGES })}</p>}
-      {busy && urls.length === 0 && (
-        <div className="grid animate-pulse gap-4 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="aspect-[3/4] rounded-2xl bg-slate-200 dark:bg-slate-800" />
-          ))}
-        </div>
+      {pages.length > 0 && !busy && (
+        <button
+          onClick={() => setOverlayOpen(true)}
+          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99]"
+        >
+          <BookOpen className="h-5 w-5" /> {t('viewerPage.openViewer')} · {pages.length}
+        </button>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {urls.map((u, i) => (
-          <figure key={i} className="animate-enter content-auto rounded-2xl border bg-white p-2 [contain-intrinsic-size:auto_420px] dark:border-slate-800 dark:bg-slate-900">
-            <img src={u} alt={`page ${i + 1}`} className="h-auto w-full max-w-full rounded-xl" loading="lazy" />
-            <figcaption className="p-1 text-center text-xs text-slate-500">— {i + 1} —</figcaption>
-          </figure>
-        ))}
-      </div>
+      {overlayOpen && pages.length > 0 && (
+        <PdfOverlay
+          title={file?.name ?? (t('viewerPage.title') as string)}
+          pages={pages}
+          onClose={() => setOverlayOpen(false)}
+          onNeedOcr={() => { setOverlayOpen(false); navigate('/ocr'); }}
+        />
+      )}
     </div>
   );
 }

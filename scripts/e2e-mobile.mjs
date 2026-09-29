@@ -123,6 +123,8 @@ await check('split mobile → download', async () => {
   await page.locator('input[type="file"]').first().setInputFiles([s]);
   await page.waitForTimeout(500);
   await page.locator('input[placeholder*="1-3"]').fill('1-2');
+  await page.getByRole('button', { name: 'Проверить' }).click();
+  await page.waitForTimeout(3000);
   await page.getByRole('button', { name: 'Выполнить' }).click();
   const dlBtn = page.getByRole('button', { name: /Скачать/ });
   await dlBtn.waitFor({ timeout: 30000 });
