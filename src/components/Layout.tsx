@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { FileText, Moon, Sun, Globe } from 'lucide-react';
+import { ArrowLeft, FileText, Moon, Sun, Globe } from 'lucide-react';
 
 export function Layout() {
   const { t, i18n } = useTranslation();
@@ -17,6 +17,8 @@ export function Layout() {
     const next = i18n.language === 'ru' ? 'en' : 'ru';
     void i18n.changeLanguage(next);
   };
+
+  const isTool = pathname !== '/' && pathname !== '/about';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50/80 via-white to-white text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
@@ -42,17 +44,27 @@ export function Layout() {
             </button>
           </div>
         </div>
+        <nav className="border-t border-indigo-100/60 sm:hidden dark:border-slate-800">
+          <div className="mx-auto flex max-w-6xl items-center gap-1 px-3 py-1.5">
+            <NavLink to="/" className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-50 dark:hover:bg-slate-800">{t('home')}</NavLink>
+            <NavLink to="/about" className="rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-50 dark:hover:bg-slate-800">{t('aboutNav')}</NavLink>
+          </div>
+        </nav>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
+        {isTool && (
+          <Link
+            to="/"
+            className="mb-4 inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-slate-800"
+          >
+            <ArrowLeft className="h-4 w-4" /> {t('allTools')}
+          </Link>
+        )}
         <div key={pathname} className="animate-enter">
           <Outlet />
         </div>
       </main>
       <footer className="border-t py-6 text-center text-xs text-slate-500 dark:border-slate-800">
-        <div className="mb-2 flex items-center justify-center gap-4 text-sm sm:hidden">
-          <NavLink to="/" className="font-medium text-indigo-600 dark:text-indigo-400">{t('home')}</NavLink>
-          <NavLink to="/about" className="font-medium text-indigo-600 dark:text-indigo-400">{t('aboutNav')}</NavLink>
-        </div>
         ALL PDF · {t('footerNote')}
       </footer>
     </div>

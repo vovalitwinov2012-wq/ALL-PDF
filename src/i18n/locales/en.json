@@ -28,6 +28,7 @@
   "theme": "Theme",
   "language": "Language",
   "home": "Home",
+  "allTools": "All tools",
   "aboutNav": "About",
   "footerNote": "Files are processed only in your browser and never uploaded.",
   "tooManyFiles": "Too many files (max 20).",
