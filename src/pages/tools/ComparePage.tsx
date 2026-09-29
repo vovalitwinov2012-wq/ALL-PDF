@@ -104,18 +104,17 @@ async function ocrLines(
 
 interface BuiltSide extends CmpSide {
   texts: string[];
+  imgW: number;
+  imgH: number;
 }
 
-async function buildSide(
-  file: File,
-  ocrWorker: { recognize: (url: string) => Promise<never> } | null,
-  setStatus: (s: string) => void,
-  t: (k: string, o?: Record<string, unknown>) => unknown
-): Promise<BuiltSide[]> {
+// Один проход: рендерим все страницы и забираем текстовый слой
+async function renderSidePages(file: File): Promise<{ sides: BuiltSide[]; total: number }> {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buf }).promise;
-  const n = Math.min(pdf.numPages, MAX_PAGES);
-  const out: BuiltSide[] = [];
+  const total = pdf.numPages;
+  const n = Math.min(total, MAX_PAGES);
+  const sides: BuiltSide[] = [];
   for (let p = 1; p <= n; p++) {
     const page = await pdf.getPage(p);
     const viewport = page.getViewport({ scale: RENDER_SCALE });
@@ -124,23 +123,18 @@ async function buildSide(
     canvas.height = Math.floor(viewport.height);
     await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
     const url = canvas.toDataURL('image/jpeg', 0.82);
-    let lines = await textLines(page, viewport, canvas.width, canvas.height);
-    let ocr = false;
-    if (lines.length === 0 && ocrWorker) {
-      setStatus(t('compare.stOcr', { n: p }) as string);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      lines = await ocrLines(ocrWorker as any, url, canvas.width, canvas.height);
-      ocr = lines.length > 0;
-    }
-    out.push({
+    const lines = await textLines(page, viewport, canvas.width, canvas.height);
+    sides.push({
       url,
       aspect: canvas.width / canvas.height,
       lines: lines.map((l) => ({ ...l, kind: 'same' as const })),
-      ocr,
-      texts: lines.map((l) => l.text)
+      ocr: false,
+      texts: lines.map((l) => l.text),
+      imgW: canvas.width,
+      imgH: canvas.height
     });
   }
-  return out;
+  return { sides, total };
 }
 
 export function ComparePage() {
@@ -185,16 +179,30 @@ export function ComparePage() {
     let ocrWorker: any = null;
     try {
       setStatus(t('compare.stRender') as string);
-      const [sa, sb] = await Promise.all([buildSide(a, null, setStatus, t), buildSide(b, null, setStatus, t)]);
-      // Если где-то нет текста — поднимаем OCR-движок один раз на оба файла
-      const needOcr = [...sa, ...sb].some((s) => s.texts.length === 0);
+      const [ra, rb] = await Promise.all([renderSidePages(a), renderSidePages(b)]);
+      // Страницы без текстового слоя — распознаём точечно, без повторного рендера
+      const needOcr = [...ra.sides, ...rb.sides].some((s) => s.texts.length === 0);
       if (needOcr) {
         const { createWorker } = await import('tesseract.js');
         ocrWorker = await createWorker(['rus', 'eng']);
+        for (const sides of [ra.sides, rb.sides]) {
+          for (let i = 0; i < sides.length; i++) {
+            const s = sides[i];
+            if (s.texts.length > 0) continue;
+            setStatus(t('compare.stOcr', { n: i + 1 }) as string);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const lines = await ocrLines(ocrWorker as any, s.url, s.imgW, s.imgH);
+            if (lines.length > 0) {
+              s.lines = lines.map((l) => ({ ...l, kind: 'same' as const }));
+              s.texts = lines.map((l) => l.text);
+              s.ocr = true;
+            }
+          }
+        }
       }
-      const sidesA = needOcr ? await buildSide(a, ocrWorker, setStatus, t) : sa;
-      const sidesB = needOcr ? await buildSide(b, ocrWorker, setStatus, t) : sb;
-      setTruncated(sidesA.length === MAX_PAGES || sidesB.length === MAX_PAGES);
+      const sidesA = ra.sides;
+      const sidesB = rb.sides;
+      setTruncated(ra.total > MAX_PAGES || rb.total > MAX_PAGES);
       const n = Math.max(sidesA.length, sidesB.length);
       const out: CmpPair[] = [];
       for (let i = 0; i < n; i++) {

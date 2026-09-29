@@ -197,7 +197,8 @@
     "startFrom": "Start from",
     "pad": "Zeroes",
     "addBates": "Number pages",
-    "failed": "Could not apply. Check the page number."
+    "failed": "Could not apply. Check the page number.",
+    "cappedNote": "The window shows the first {{shown}} of {{total}} — tap places the stamp on visible pages only. A number past {{shown}} can be typed manually."
   },
   "signPage": {
     "title": "Signature",
@@ -217,7 +218,7 @@
     "uploadStamp": "Upload stamp PNG",
     "toLibrary": "To library",
     "emptyKind": "Empty for now.",
-    "libraryNote": "The library lives until page reload. PNGs with transparent background blend cleanly.",
+    "libraryNote": "The library is stored in this browser (small PNGs survive reload). PNGs with transparent background blend cleanly.",
     "openViewer": "Open PDF and arrange",
     "placed": "Placed: {{n}}",
     "tapPlaceHint": "Tap to place “{{name}}”, drag the picture to move.",
@@ -225,7 +226,9 @@
     "nothingPlaced": "Nothing placed — tap a page in the window.",
     "toLibraryBtn": "To library",
     "opaqueWarn": "The picture seems to have a solid background with no transparency — it will cover text with a rectangle. A transparent PNG works better.",
-    "badPng": "Could not read the picture. A valid PNG is needed."
+    "badPng": "Could not read the picture. A valid PNG is needed.",
+    "cappedNote": "Showing the first {{shown}} of {{total}} — only visible pages can be signed. Split the file if you need more.",
+    "rotatedNote": "The file has rotated pages: signatures may land off the preview there. Check the result before sending."
   },
   "protectPage": {
     "title": "Protect PDF (AES)",
@@ -309,7 +312,9 @@
     "left": "Left",
     "pagesPh": "Pages (empty = all)",
     "badRange": "No pages match these numbers: the file has {{n}} pp. Check the input.",
-    "do": "Crop"
+    "do": "Crop",
+    "cappedNote": "Showing the first {{shown}} of {{total}} — the rest will be cropped with default margins (36 pt).",
+    "rotatedNote": "The file has rotated pages: the frame matches the picture, but check the burned result visually."
   },
   "repair": {
     "title": "Repair PDF",

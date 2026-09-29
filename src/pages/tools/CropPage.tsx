@@ -21,6 +21,7 @@ const MIN_KEPT = 20;
 interface CropPage extends OverlayPageData {
   wPt: number;
   hPt: number;
+  rotated: boolean;
 }
 
 const clampPt = (v: number, max: number) => Math.min(Math.max(max, 0), Math.max(0, Math.round(v)));
@@ -98,6 +99,7 @@ export function CropPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [pages, setPages] = useState<CropPage[]>([]);
+  const [total, setTotal] = useState(0);
   const [margins, setMargins] = useState<Record<number, CropMargins>>({});
   const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -124,6 +126,7 @@ export function CropPage() {
     if (isTooBig(f)) {
       setFile(null);
       setPages([]);
+      setTotal(0);
       setMargins({});
       setResult(null);
       return setError(t('fileTooBig') as string);
@@ -132,12 +135,14 @@ export function CropPage() {
     setResult(null);
     setError(null);
     setPages([]);
+    setTotal(0);
     setMargins({});
     setActive(0);
     setChecking(true);
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
       const count = (await loadPdf(bytes)).getPageCount();
+      setTotal(count);
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
       const n = Math.min(count, 30);
       const out: CropPage[] = [];
@@ -146,13 +151,18 @@ export function CropPage() {
         const pg = await pdf.getPage(p);
         const wPt = pg.view[2] - pg.view[0];
         const hPt = pg.view[3] - pg.view[1];
+        // Повёрнутые страницы рендерятся транспонированными — рамка совпадает
+        // с картинкой, но вжигание идёт в неповёрнутых координатах: предупреждаем.
+        const v1 = pg.getViewport({ scale: 1 });
+        const rotated =
+          Math.abs(wPt - hPt) > 1 && Math.abs(v1.width - hPt) < 1 && Math.abs(v1.height - wPt) < 1;
         const scale = Math.min(1.2, 560 / wPt);
         const viewport = pg.getViewport({ scale });
         const canvas = document.createElement('canvas');
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words: [], label: `page ${p}`, wPt, hPt });
+        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words: [], label: `page ${p}`, wPt, hPt, rotated });
         mm[p - 1] = { ...DEFAULT_M };
       }
       setPages(out);
@@ -168,7 +178,8 @@ export function CropPage() {
     setResult(null);
     const cur = margins[active] ?? DEFAULT_M;
     const mm: Record<number, CropMargins> = {};
-    pages.forEach((_, i) => { mm[i] = { ...cur }; });
+    const n = Math.max(pages.length, total);
+    for (let i = 0; i < n; i++) mm[i] = { ...cur };
     setMargins(mm);
   };
 
@@ -184,15 +195,17 @@ export function CropPage() {
     setError(null);
     try {
       let out: Uint8Array = new Uint8Array(await file.arrayBuffer());
-      // Группируем страницы с одинаковыми полями — по одному проходу на группу
+      // Группируем страницы с одинаковыми полями — по одному проходу на группу.
+      // Невидимые (за капой превью) страницы идут с полями по умолчанию.
       const groups = new Map<string, { m: CropMargins; idx: number[] }>();
-      pages.forEach((_, i) => {
+      const n = Math.max(pages.length, total);
+      for (let i = 0; i < n; i++) {
         const mm = margins[i] ?? DEFAULT_M;
         const key = `${mm.top}|${mm.right}|${mm.bottom}|${mm.left}`;
         const g = groups.get(key);
         if (g) g.idx.push(i);
         else groups.set(key, { m: mm, idx: [i] });
-      });
+      }
       for (const g of groups.values()) {
         out = await cropPdf(out, g.m, g.idx);
       }
@@ -225,8 +238,14 @@ export function CropPage() {
           name={file.name}
           meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined}
           disabled={busy}
-          onRemove={() => { setFile(null); setPages([]); setMargins({}); setResult(null); setError(null); setOverlayOpen(false); }}
+          onRemove={() => { setFile(null); setPages([]); setTotal(0); setMargins({}); setResult(null); setError(null); setOverlayOpen(false); }}
         />
+      )}
+      {total > pages.length && pages.length > 0 && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{t('crop.cappedNote', { shown: pages.length, total })}</p>
+      )}
+      {pages.some((p) => p.rotated) && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{t('crop.rotatedNote')}</p>
       )}
       {checking && <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />}
 

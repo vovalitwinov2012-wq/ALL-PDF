@@ -175,7 +175,7 @@ export function SplitPage() {
               <div className="thin-scroll mt-2 flex gap-2 overflow-x-auto pb-1">
                 {preview.thumbs.map((th) => (
                   <figure key={th.n} className={`relative w-20 shrink-0 overflow-hidden rounded-lg border-2 ${th.kept ? 'border-emerald-500' : 'border-red-400 opacity-40 grayscale'}`}>
-                    <img src={th.url} alt={`page ${th.n}`} className="block w-full" loading="lazy" style={th.rotated ? { transform: 'rotate(90deg)' } : undefined} />
+                    <img src={th.url} alt={`page ${th.n}`} className="block w-full" loading="lazy" style={th.rotated ? { transform: 'rotate(90deg) scale(0.62)' } : undefined} />
                     <figcaption className={`absolute bottom-0 left-0 right-0 py-0.5 text-center text-[11px] font-bold text-white ${th.kept ? 'bg-emerald-600/90' : 'bg-red-600/90'}`}>
                       {th.n} {th.kept ? '✓' : '✕'}
                     </figcaption>

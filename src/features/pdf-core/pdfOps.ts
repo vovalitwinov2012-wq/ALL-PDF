@@ -1,4 +1,5 @@
 import { PDFDocument, degrees, rgb, StandardFonts, PDFTextField, PDFCheckBox, PDFRadioGroup, PDFDropdown } from 'pdf-lib';
+import { textFont } from '../../lib/fonts';
 
 export async function loadPdf(bytes: Uint8Array): Promise<PDFDocument> {
   return PDFDocument.load(bytes, { ignoreEncryption: true });
@@ -108,13 +109,14 @@ export async function stampText(
   opts?: { watermark?: boolean; pageNumbers?: boolean }
 ): Promise<Uint8Array> {
   const src = await loadPdf(bytes);
-  const font = await src.embedFont(StandardFonts.HelveticaBold);
+  const font = await textFont(src, text, true);
   const pages = src.getPages();
   pages.forEach((p, i) => {
     const { width, height } = p.getSize();
     if (opts?.watermark) {
+      const w = font.widthOfTextAtSize(text, 42);
       p.drawText(text, {
-        x: width / 2 - text.length * 5,
+        x: width / 2 - w / 2,
         y: height / 2,
         size: 42,
         font,
@@ -138,7 +140,7 @@ export async function stampTextAt(
   opts: { pages: 'all' | number[]; h: 'left' | 'center' | 'right'; v: 'top' | 'middle' | 'bottom'; size: number }
 ): Promise<Uint8Array> {
   const src = await loadPdf(bytes);
-  const font = await src.embedFont(StandardFonts.Helvetica);
+  const font = await textFont(src, text, false);
   const widthOf = (s: string) => font.widthOfTextAtSize(s, opts.size);
   src.getPages().forEach((p, i) => {
     if (opts.pages !== 'all' && !opts.pages.includes(i)) return;

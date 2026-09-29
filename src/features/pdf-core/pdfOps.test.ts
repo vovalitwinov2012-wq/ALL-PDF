@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { PDFDocument } from 'pdf-lib';
+import { __setFontBytesProvider } from '../../lib/fonts';
 import {
   compressPdf,
   flattenPdf,
@@ -63,6 +65,25 @@ describe('pdfOps', () => {
       size: 12
     });
     expect((await PDFDocument.load(out)).getPageCount()).toBe(2);
+  });
+
+  it('stamps cyrillic text at position', async () => {
+    __setFontBytesProvider(async (url) =>
+      new Uint8Array(readFileSync(url.includes('Bold') ? 'src/assets/fonts/DejaVuSans-Bold.ttf' : 'src/assets/fonts/DejaVuSans.ttf'))
+    );
+    try {
+      const out = await stampTextAt(await makePdf(2), 'СОГЛАСОВАНО', {
+        pages: [1],
+        h: 'center',
+        v: 'top',
+        size: 16
+      });
+      expect((await PDFDocument.load(out)).getPageCount()).toBe(2);
+      const wm = await stampText(await makePdf(1), 'ЧЕРНОВИК', { watermark: true });
+      expect((await PDFDocument.load(wm)).getPageCount()).toBe(1);
+    } finally {
+      __setFontBytesProvider(null);
+    }
   });
 
   it('watermark and page numbers keep pages', async () => {

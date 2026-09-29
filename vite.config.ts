@@ -28,7 +28,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,ttf}'],
         // Тяжелые WASM/ML-модели — только lazy, не прекэшируем
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // OCR: движок, WASM-ядро и языковые модели грузятся с jsdelivr —

@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib';
 import { deflate } from 'pako';
 import { cropPdf, splitEvery, repairPdf, stampBates, extractImages, organizePdf, drawShapes, recompressPdf } from './pages';
 import { diffLines, countChanges } from './diff';
 import { itemsToCsv } from './tables';
+import { __setFontBytesProvider } from '../../lib/fonts';
+
+afterEach(() => __setFontBytesProvider(null));
+
+function mockCyrillicFonts(): void {
+  __setFontBytesProvider(async (url) =>
+    new Uint8Array(readFileSync(url.includes('Bold') ? 'src/assets/fonts/DejaVuSans-Bold.ttf' : 'src/assets/fonts/DejaVuSans.ttf'))
+  );
+}
 
 async function makePdf(pages: number): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -42,6 +52,12 @@ describe('pages', () => {
     expect((await PDFDocument.load(out)).getPageCount()).toBe(2);
   });
 
+  it('stamps bates with cyrillic prefix', async () => {
+    mockCyrillicFonts();
+    const out = await stampBates(await makePdf(1), { prefix: 'ДЕЛО-', start: 1, pad: 4 });
+    expect((await PDFDocument.load(out)).getPageCount()).toBe(1);
+  });
+
   it('organizes: reorder + rotate + delete', async () => {
     const out = await organizePdf(await makePdf(3), [
       { src: 2, rot: 90 },
@@ -67,6 +83,14 @@ describe('pages', () => {
         { kind: 'text', x: 50, y: 500, str: 'Hi', size: 18, color: { r: 0, g: 0, b: 0 } },
         { kind: 'check', x1: 0, y1: 600, x2: 60, y2: 660, color: { r: 0, g: 0.6, b: 0 }, width: 3 }
       ]
+    });
+    expect((await PDFDocument.load(out)).getPageCount()).toBe(1);
+  });
+
+  it('burns cyrillic text shape', async () => {
+    mockCyrillicFonts();
+    const out = await drawShapes(await makePdf(1), {
+      0: [{ kind: 'text', x: 50, y: 500, str: 'СОГЛАСОВАНО', size: 18, color: { r: 0, g: 0, b: 0 } }]
     });
     expect((await PDFDocument.load(out)).getPageCount()).toBe(1);
   });
@@ -185,5 +209,42 @@ describe('recompressPdf', () => {
   it('does not touch pdfs without images', async () => {
     const { report } = await recompressPdf(await makePdf(1), { quality: 0.6, maxDim: 2000, pngToJpeg: true }, stubT);
     expect(report.processed).toBe(0);
+  });
+
+  it('processes shared XObject once, not per page', async () => {
+    const doc = await PDFDocument.create();
+    const pixels = new Uint8Array(4 * 4 * 3).fill(200);
+    const dict = doc.context.obj({});
+    dict.set(PDFName.of('Type'), PDFName.of('XObject'));
+    dict.set(PDFName.of('Subtype'), PDFName.of('Image'));
+    dict.set(PDFName.of('Width'), PDFNumber.of(4));
+    dict.set(PDFName.of('Height'), PDFNumber.of(4));
+    dict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
+    dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
+    dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    const ref = doc.context.register(PDFRawStream.of(dict, deflate(pixels)));
+    for (let i = 0; i < 3; i++) {
+      const page = doc.addPage([100, 100]);
+      const res = doc.context.obj({});
+      const xo = doc.context.obj({});
+      xo.set(PDFName.of('Im1'), ref);
+      res.set(PDFName.of('XObject'), xo);
+      page.node.set(PDFName.of('Resources'), res);
+    }
+    const src = await doc.save();
+    let calls = 0;
+    const { report } = await recompressPdf(
+      src,
+      { quality: 0.6, maxDim: 2000, pngToJpeg: true },
+      {
+        jpeg: async () => null,
+        raw: async () => {
+          calls++;
+          return { bytes: new Uint8Array([10, 20, 30]), w: 4, h: 4 };
+        }
+      }
+    );
+    expect(calls).toBe(1);
+    expect(report.processed).toBe(1);
   });
 });

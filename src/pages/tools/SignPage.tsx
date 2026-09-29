@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -10,6 +10,7 @@ import { PdfOverlay, OverlayPageData } from '../../components/PdfOverlay';
 import { stampImages } from '../../features/pdf-core/pdfOps';
 import { loadPdf } from '../../features/pdf-core/pdfOps';
 import { isTooBig, downloadBytes } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 import { cn } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -45,9 +46,80 @@ interface Placement {
 interface SignPageInfo extends OverlayPageData {
   wPt: number;
   hPt: number;
+  rotated: boolean;
 }
 
 let nextId = 1;
+
+const LIB_KEY = 'sign.library';
+const LIB_MAX_ITEMS = 20;
+const LIB_MAX_BYTES = 200 * 1024; // большие PNG живут только до перезагрузки
+
+interface StoredItem {
+  id: number;
+  kind: 'sign' | 'stamp';
+  name: string;
+  aspect: number;
+  transparent: boolean;
+  b64: string;
+}
+
+function b64encode(bytes: Uint8Array): string {
+  let s = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    s += String.fromCharCode(...bytes.subarray(i, i + CH));
+  }
+  return btoa(s);
+}
+
+function b64decode(b64: string): Uint8Array {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+function loadLibrary(): LibItem[] {
+  const stored = loadSetting<StoredItem[]>(LIB_KEY, []);
+  if (!Array.isArray(stored) || stored.length === 0) return [];
+  const out: LibItem[] = [];
+  for (const s of stored.slice(0, LIB_MAX_ITEMS)) {
+    try {
+      if (!s || typeof s.b64 !== 'string' || !s.b64) continue;
+      const bytes = b64decode(s.b64);
+      const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: 'image/png' }));
+      out.push({
+        id: typeof s.id === 'number' ? s.id : nextId++,
+        kind: s.kind === 'stamp' ? 'stamp' : 'sign',
+        name: String(s.name || 'PNG'),
+        url,
+        bytes,
+        aspect: typeof s.aspect === 'number' && s.aspect > 0 ? s.aspect : 1,
+        transparent: s.transparent !== false
+      });
+    } catch {
+      // битый элемент — пропускаем
+    }
+  }
+  const maxId = out.reduce((m, l) => Math.max(m, l.id), 0);
+  nextId = Math.max(nextId, maxId + 1);
+  return out;
+}
+
+function storeLibrary(items: LibItem[]): void {
+  try {
+    const stored: StoredItem[] = [];
+    for (const l of items) {
+      if (l.bytes.length > LIB_MAX_BYTES) continue; // тяжеловесы — только на сессию
+      stored.push({ id: l.id, kind: l.kind, name: l.name, aspect: l.aspect, transparent: l.transparent, b64: b64encode(l.bytes) });
+      if (stored.length >= LIB_MAX_ITEMS) break;
+    }
+    saveSetting(LIB_KEY, stored);
+  } catch {
+    // квота localStorage — библиотека просто не сохранится
+  }
+}
 
 function decodeImage(bytes: Uint8Array): Promise<{ url: string; w: number; h: number; transparent: boolean }> {
   return new Promise((resolve, reject) => {
@@ -96,11 +168,12 @@ export function SignPage() {
   const [drawing, setDrawing] = useState(false);
   const [hasInk, setHasInk] = useState(false);
   const [lineW, setLineW] = useState(4);
-  const [library, setLibrary] = useState<LibItem[]>([]);
+  const [library, setLibrary] = useState<LibItem[]>(loadLibrary);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [warn, setWarn] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [pages, setPages] = useState<SignPageInfo[]>([]);
+  const [total, setTotal] = useState(0);
   const [placements, setPlacements] = useState<Record<number, Placement[]>>({});
   const [selPlacement, setSelPlacement] = useState<{ pi: number; key: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -112,6 +185,11 @@ export function SignPage() {
 
   const selected = library.find((l) => l.id === selectedId) ?? null;
   const placedCount = Object.values(placements).reduce((s, a) => s + a.length, 0);
+
+  // Библиотека переживает перезагрузку (мелкие PNG — в localStorage)
+  useEffect(() => {
+    storeLibrary(library);
+  }, [library]);
 
   // --- Рисование подписи ---
   const toCanvas = (e: React.PointerEvent) => {
@@ -209,6 +287,8 @@ export function SignPage() {
   };
 
   const removeItem = (id: number) => {
+    const gone = library.find((l) => l.id === id);
+    if (gone) URL.revokeObjectURL(gone.url);
     setLibrary((p) => p.filter((l) => l.id !== id));
     if (selectedId === id) setSelectedId(null);
     setPlacements((p) => {
@@ -228,18 +308,21 @@ export function SignPage() {
     if (isTooBig(f)) {
       setFile(null);
       setPages([]);
+      setTotal(0);
       return setError(t('fileTooBig') as string);
     }
     setError(null);
     setFile(f);
     setResult(null);
     setPages([]);
+    setTotal(0);
     setPlacements({});
     setSelPlacement(null);
     setLoading(true);
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
       const count = (await loadPdf(bytes)).getPageCount();
+      setTotal(count);
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
       const n = Math.min(count, 30);
       const out: SignPageInfo[] = [];
@@ -247,13 +330,16 @@ export function SignPage() {
         const pg = await pdf.getPage(p);
         const wPt = pg.view[2] - pg.view[0];
         const hPt = pg.view[3] - pg.view[1];
+        const v1 = pg.getViewport({ scale: 1 });
+        const rotated =
+          Math.abs(wPt - hPt) > 1 && Math.abs(v1.width - hPt) < 1 && Math.abs(v1.height - wPt) < 1;
         const scale = Math.min(1.5, 640 / wPt);
         const viewport = pg.getViewport({ scale });
         const canvas = document.createElement('canvas');
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words: [], label: `page ${p}`, wPt, hPt });
+        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words: [], label: `page ${p}`, wPt, hPt, rotated });
       }
       setPages(out);
     } catch {
@@ -464,7 +550,13 @@ export function SignPage() {
 
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy || loading} subtitleKey="dropSubtitlePdf" onFiles={(f) => pickFile(f[0])} />
       {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
-      {file && <FileChip name={file.name} meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined} disabled={busy} onRemove={() => { setFile(null); setPages([]); setPlacements({}); setSelPlacement(null); setResult(null); setError(null); setOverlayOpen(false); }} />}
+      {file && <FileChip name={file.name} meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined} disabled={busy} onRemove={() => { setFile(null); setPages([]); setTotal(0); setPlacements({}); setSelPlacement(null); setResult(null); setError(null); setOverlayOpen(false); }} />}
+      {total > pages.length && pages.length > 0 && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{t('signPage.cappedNote', { shown: pages.length, total })}</p>
+      )}
+      {pages.some((p) => p.rotated) && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{t('signPage.rotatedNote')}</p>
+      )}
       {loading && <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />}
 
       {pages.length > 0 && (

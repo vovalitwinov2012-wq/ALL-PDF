@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen } from 'lucide-react';
@@ -26,6 +26,7 @@ export function ViewerPage() {
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const openSeq = useRef(0);
 
   const open = async (f: File | undefined) => {
     if (!f) return;
@@ -34,6 +35,7 @@ export function ViewerPage() {
       setPages([]);
       return setError(t('fileTooBig') as string);
     }
+    const seq = ++openSeq.current;
     setFile(f);
     setBusy(true);
     setError(null);
@@ -41,11 +43,13 @@ export function ViewerPage() {
     try {
       const buf = await f.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
+      if (openSeq.current !== seq) return; // пока грузился, файл убрали или выбрали другой
       const n = Math.min(pdf.numPages, MAX_PAGES);
       setTruncated(pdf.numPages > MAX_PAGES);
       setProgress([0, n]);
       const out: OverlayPageData[] = [];
       for (let p = 1; p <= n; p++) {
+        if (openSeq.current !== seq) return;
         const page = await pdf.getPage(p);
         const viewport = page.getViewport({ scale: RENDER_SCALE });
         const canvas = document.createElement('canvas');
@@ -61,18 +65,25 @@ export function ViewerPage() {
         });
         setProgress([p, n]);
       }
+      if (openSeq.current !== seq) return;
       setPages(out);
       setOverlayOpen(true);
     } catch {
+      if (openSeq.current !== seq) return;
       setPages([]);
       setError(t('failed') as string);
     } finally {
-      setBusy(false);
-      setProgress(null);
+      if (openSeq.current === seq) {
+        setBusy(false);
+        setProgress(null);
+      }
     }
   };
 
   const close = () => {
+    openSeq.current++; // отменяем летящую загрузку: призраков не будет
+    setBusy(false);
+    setProgress(null);
     setFile(null);
     setPages([]);
     setTruncated(false);

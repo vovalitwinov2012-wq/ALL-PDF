@@ -67,12 +67,29 @@ export function PdfOverlay({ title, pages, toolbar, headerActions, noTextHint, o
     setMatchIdx(0);
   }, [applied]);
 
-  // Блокируем скролл страницы под окном, Escape — закрыть
+  // Первый Enter: скроллим к первому совпадению уже после отрисовки подсветки
+  useEffect(() => {
+    if (!applied.trim() || matches.length === 0) return;
+    const m = matches[0];
+    setCurPage(m.page + 1);
+    requestAnimationFrame(() => {
+      matchRefs.current.get(`${m.page}:${m.word}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applied]);
+
+  // Блокируем скролл страницы под окном; Escape в поле ввода — только снять фокус
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        el.blur();
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -101,7 +118,6 @@ export function PdfOverlay({ title, pages, toolbar, headerActions, noTextHint, o
 
   const submitSearch = () => {
     setApplied(query);
-    setTimeout(() => gotoMatch(0), 50);
   };
 
   const onScroll = () => {

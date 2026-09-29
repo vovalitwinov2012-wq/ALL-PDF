@@ -49,12 +49,12 @@ export function EditPage() {
     saveSetting('edit.pos', p);
   };
   const setSize = (s: number | ((p: number) => number)) => {
-    setSizeState((prev) => {
-      const next = typeof s === 'function' ? (s as (p: number) => number)(prev) : s;
-      saveSetting('edit.size', next);
-      return next;
-    });
+    setSizeState((prev) => (typeof s === 'function' ? (s as (p: number) => number)(prev) : s));
   };
+  // Размер переживает перезагрузку; пишем в эффекте, а не в апдейтере (StrictMode дублирует апдейтеры)
+  useEffect(() => {
+    saveSetting('edit.size', size);
+  }, [size]);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [batesPrefix, setBatesPrefix] = useState('DOC-');
@@ -129,8 +129,9 @@ export function EditPage() {
 
   // null — ввод непонятен или номер вне диапазона: молча штамповать весь документ нельзя
   const parsePages = (): number[] | 'all' | null => {
-    if (allPages || !pageCount) return 'all';
-    if (page.trim() === '') return 'all';
+    if (allPages) return 'all';
+    if (!pageCount) return null;
+    if (page.trim() === '') return null;
     const n = parseInt(page, 10);
     if (!Number.isFinite(n) || n < 1 || n > pageCount) return null;
     return [n - 1];
@@ -138,7 +139,7 @@ export function EditPage() {
 
   const apply = async (kind: 'stamp' | 'watermark' | 'numbers' | 'meta' | 'bates') => {
     if (!file) return;
-    if (kind === 'stamp' && parsePages() === null) return setError(t('editPage.badPages', { n: pageCount }) as string);
+    if (kind === 'stamp' && parsePages() === null) return setError(t('editPage.badPages', { n: pageCount ?? '…' }) as string);
     setBusy(true);
     setActive(kind);
     setError(null);
@@ -151,7 +152,7 @@ export function EditPage() {
       else if (kind === 'bates') out = await stampBates(bytes, { prefix: batesPrefix, start: Math.max(0, batesStart), pad: batesPad });
       else {
         const pages = parsePages();
-        if (pages === null) return setError(t('editPage.badPages', { n: pageCount }) as string);
+        if (pages === null) return setError(t('editPage.badPages', { n: pageCount ?? '…' }) as string);
         out = await stampTextAt(bytes, text || 'ALL PDF', { pages, h: pos.h, v: pos.v, size });
       }
       setResult(out);
@@ -184,6 +185,9 @@ export function EditPage() {
         >
           <BookOpen className="h-5 w-5" /> {t('editPage.openViewer')}
         </button>
+      )}
+      {pageCount !== null && pageCount > overlayPages.length && overlayPages.length > 0 && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{t('editPage.cappedNote', { shown: overlayPages.length, total: pageCount })}</p>
       )}
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -260,7 +264,6 @@ export function EditPage() {
           <button disabled={!file || busy} onClick={() => apply('watermark')} className="min-h-[44px] rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-700 active:scale-[0.98] disabled:opacity-50">{actLabel('watermark', 'editPage.watermark')}</button>
           <button disabled={!file || busy} onClick={() => apply('numbers')} className="min-h-[44px] rounded-xl bg-slate-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 active:scale-[0.98] disabled:opacity-50">{actLabel('numbers', 'editPage.pageNumbers')}</button>
         </div>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -285,7 +288,6 @@ export function EditPage() {
         <button disabled={!file || busy} onClick={() => apply('bates')} className="mt-2 min-h-[44px] w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
           {actLabel('bates', 'editPage.addBates')}
         </button>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="grid gap-2 sm:grid-cols-2">
@@ -295,8 +297,8 @@ export function EditPage() {
         <button disabled={!file || busy} onClick={() => apply('meta')} className="mt-2 min-h-[44px] w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50 dark:bg-slate-700">
           {actLabel('meta', 'editPage.applyMeta')}
         </button>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="edited.pdf" />}
       {overlayOpen && overlayPages.length > 0 && (
         <PdfOverlay

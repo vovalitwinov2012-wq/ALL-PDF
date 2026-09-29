@@ -1,5 +1,6 @@
-import { PDFDocument, PDFName, PDFDict, PDFRawStream, PDFArray, PDFNumber, PDFRef, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFDict, PDFRawStream, PDFArray, PDFNumber, PDFRef, rgb } from 'pdf-lib';
 import { inflate } from 'pako';
+import { textFont } from '../../lib/fonts';
 
 export interface CropMargins {
   top: number;
@@ -96,6 +97,9 @@ export async function recompressPdf(
     return s.startsWith('/') ? s.slice(1) : s;
   };
   const report: RecompressReport = { processed: 0, skipped: 0, savedBytes: 0 };
+  // Один и тот же XObject часто висит на нескольких страницах — жмём один раз,
+  // иначе транскодер будет пережимать собственный выход снова и снова.
+  const seen = new Set<string>();
 
   for (const page of src.getPages()) {
     const res = page.node.Resources();
@@ -115,6 +119,9 @@ export async function recompressPdf(
         report.skipped++;
         continue;
       }
+      const tag = `${ref.objectNumber}:${ref.generationNumber}`;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
       const subtype = deref(stream.dict.get(PDFName.of('Subtype')));
       if (!subtype || nameOf(subtype as { toString(): string }) !== 'Image') continue;
       // Картинки с маской прозрачности не трогаем — убьём альфу
@@ -182,7 +189,7 @@ export interface BatesOptions {
 /** Нумерация Бейтса: PREFIX-000001 на каждой странице внизу по центру. */
 export async function stampBates(bytes: Uint8Array, opts: BatesOptions): Promise<Uint8Array> {
   const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-  const font = await src.embedFont(StandardFonts.Helvetica);
+  const font = await textFont(src, opts.prefix, false);
   src.getPages().forEach((p, i) => {
     const { width } = p.getSize();
     const label = `${opts.prefix}${String(opts.start + i).padStart(Math.max(1, opts.pad), '0')}`;
@@ -339,11 +346,6 @@ export type Shape =
 export async function drawShapes(bytes: Uint8Array, perPage: Record<number, Shape[]>): Promise<Uint8Array> {
   const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const { rgb: toRgb } = await import('pdf-lib');
-  let font: Awaited<ReturnType<PDFDocument['embedFont']>> | null = null;
-  const textFont = async () => {
-    if (!font) font = await src.embedFont(StandardFonts.HelveticaBold);
-    return font;
-  };
   const head = (
     p: ReturnType<PDFDocument['getPage']>,
     x: number,
@@ -414,7 +416,7 @@ export async function drawShapes(bytes: Uint8Array, perPage: Record<number, Shap
           p.drawLine({ start: { x: s.pts[i - 1][0], y: s.pts[i - 1][1] }, end: { x: s.pts[i][0], y: s.pts[i][1] }, thickness: s.width, color: c, opacity: 0.95 });
         }
       } else if (s.kind === 'text') {
-        const f = await textFont();
+        const f = await textFont(src, s.str, true);
         p.drawText(s.str.slice(0, 200), { x: s.x, y: s.y, size: Math.min(72, Math.max(8, s.size)), font: f, color: toRgb(s.color.r, s.color.g, s.color.b) });
       } else if (s.kind === 'check') {
         const c = toRgb(s.color.r, s.color.g, s.color.b);
