@@ -54,7 +54,7 @@
     "crop": { "name": "Crop margins", "desc": "Trim white borders and scan edges" },
     "repair": { "name": "Repair PDF", "desc": "Rebuild a broken file" },
     "compare": { "name": "Compare PDFs", "desc": "Two versions: what changed" },
-    "tables": { "name": "Tables to CSV", "desc": "Pull tables from a report (beta)" },
+    "tables": { "name": "Tables to CSV", "desc": "Pull tables from a report" },
     "forms": { "name": "Forms", "desc": "Fill fields, flatten the document" },
     "sign": { "name": "Sign", "desc": "Draw a signature and place into PDF" },
     "protect": { "name": "AES protection", "desc": "Real encryption, password removal" }
@@ -213,8 +213,6 @@
     "tabStamp": "Stamp",
     "librarySign": "1. My signatures — draw",
     "libraryStamp": "2. Stamps & pictures — PNG only",
-    "stampNote": "Stamps are your ready-made PNG only. There is no stamp designer in the app, by design.",
-    "uploadSign": "Upload signature PNG",
     "uploadStamp": "Upload stamp PNG",
     "toLibrary": "To library",
     "emptyKind": "Empty for now.",
@@ -340,8 +338,8 @@
     "page": "Page {{n}}"
   },
   "tables": {
-    "title": "Tables to CSV (beta)",
-    "hint": "Heuristic for simple reports: rows and columns are guessed from coordinates. Always double-check the result.",
+    "title": "Tables to CSV",
+    "hint": "For simple reports: rows and columns are detected automatically. Always double-check the result.",
     "result": "Tables (CSV preview)",
     "pageMark": "--- page {{n}} ---",
     "empty": "No table-like text found."

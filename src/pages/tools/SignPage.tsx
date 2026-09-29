@@ -532,11 +532,7 @@ export function SignPage() {
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-sm font-semibold">{t('signPage.libraryStamp')}</p>
-        <p className="mt-1 text-xs text-slate-500">{t('signPage.stampNote')}</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <button onClick={() => { setPngKind('sign'); pngInput.current?.click(); }} className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 px-3 text-sm font-semibold text-indigo-700 dark:border-indigo-700 dark:text-indigo-300">
-            <Upload className="h-4 w-4" /> {t('signPage.uploadSign')}
-          </button>
           <button onClick={() => { setPngKind('stamp'); pngInput.current?.click(); }} className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 px-3 text-sm font-semibold text-indigo-700 dark:border-indigo-700 dark:text-indigo-300">
             <Upload className="h-4 w-4" /> {t('signPage.uploadStamp')}
           </button>
