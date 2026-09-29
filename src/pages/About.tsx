@@ -34,7 +34,7 @@ export function About() {
 
       <Link
         to="/"
-        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700"
+        className="mt-6 inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98]"
       >
         {t('about.cta')} <ArrowRight className="h-4 w-4" />
       </Link>

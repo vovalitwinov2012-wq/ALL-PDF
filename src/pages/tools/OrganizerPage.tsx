@@ -32,12 +32,28 @@ export function OrganizerPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
   const [dragSrc, setDragSrc] = useState<number | null>(null);
+  const [thumbProgress, setThumbProgress] = useState<[number, number] | null>(null);
 
-  const open = async (f: File) => {
-    if (isTooBig(f)) return setError(t('fileTooBig') as string);
+  const resetDoc = () => {
+    setFile(null);
+    setBytes(null);
+    setThumbs([]);
+    setTruncated(false);
+    setSelected(new Set());
+    setResult(null);
+    setThumbProgress(null);
+  };
+
+  const open = async (f: File | undefined) => {
+    if (!f) return;
+    if (isTooBig(f)) {
+      resetDoc();
+      return setError(t('fileTooBig') as string);
+    }
     setError(null);
     setResult(null);
     setSelected(new Set());
+    setThumbs([]);
     setBusy(true);
     try {
       const data = new Uint8Array(await f.arrayBuffer());
@@ -45,6 +61,7 @@ export function OrganizerPage() {
       const n = Math.min(doc.getPageCount(), MAX_THUMBS);
       setTruncated(doc.getPageCount() > MAX_THUMBS);
       const pdf = await pdfjs.getDocument({ data: data.slice() }).promise;
+      setThumbProgress([0, n]);
       const out: Thumb[] = [];
       for (let p = 1; p <= n; p++) {
         const page = await pdf.getPage(p);
@@ -54,14 +71,17 @@ export function OrganizerPage() {
         canvas.height = viewport.height;
         await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
         out.push({ src: p - 1, rot: 0, deleted: false, url: canvas.toDataURL('image/jpeg', 0.7) });
+        setThumbProgress([p, n]);
       }
       setFile(f);
       setBytes(data);
       setThumbs(out);
     } catch {
+      resetDoc();
       setError(t('failed') as string);
     } finally {
       setBusy(false);
+      setThumbProgress(null);
     }
   };
 
@@ -89,6 +109,18 @@ export function OrganizerPage() {
   const restoreAll = () => {
     setResult(null);
     setThumbs((p) => p.map((th) => ({ ...th, deleted: false })));
+  };
+
+  const moveCard = (e: React.MouseEvent, i: number, dir: -1 | 1) => {
+    e.stopPropagation();
+    const j = i + dir;
+    if (j < 0 || j >= thumbs.length) return;
+    setResult(null);
+    setThumbs((p) => {
+      const copy = [...p];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
   };
 
   const drop = (to: number) => {
@@ -121,37 +153,43 @@ export function OrganizerPage() {
   };
 
   const alive = thumbs.filter((th) => !th.deleted).length;
+  const hasDeleted = thumbs.some((th) => th.deleted);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('organizer.title')}</h1>
       <p className="text-sm text-slate-500">{t('organizer.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => open(f[0])} />
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => open(f[0])} />
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
       {truncated && <p className="text-sm text-amber-600">{t('organizer.truncated', { n: MAX_THUMBS })}</p>}
+      {thumbProgress && (
+        <p className="animate-enter text-sm text-indigo-600 dark:text-indigo-400">
+          {t('organizer.preparing', { done: thumbProgress[0], total: thumbProgress[1] })}
+        </p>
+      )}
 
       {thumbs.length > 0 && (
         <>
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-            <span className="font-semibold">{t('organizer.selected', { n: selected.size, total: alive })}</span>
-            <button onClick={rotateSel} disabled={selected.size === 0 || busy} className="inline-flex items-center gap-1 rounded-xl bg-indigo-100 px-3 py-1.5 font-semibold text-indigo-700 disabled:opacity-40 dark:bg-indigo-950 dark:text-indigo-300">
+            <span className="w-full font-semibold sm:w-auto">{t('organizer.selected', { n: selected.size, total: alive })}</span>
+            <button onClick={rotateSel} disabled={selected.size === 0 || busy} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl bg-indigo-100 px-3 py-1.5 font-semibold text-indigo-700 transition-colors disabled:opacity-40 dark:bg-indigo-950 dark:text-indigo-300">
               <RotateCw className="h-4 w-4" /> {t('organizer.rotate')}
             </button>
-            <button onClick={deleteSel} disabled={selected.size === 0 || busy} className="inline-flex items-center gap-1 rounded-xl bg-red-100 px-3 py-1.5 font-semibold text-red-700 disabled:opacity-40 dark:bg-red-950 dark:text-red-300">
+            <button onClick={deleteSel} disabled={selected.size === 0 || busy} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl bg-red-100 px-3 py-1.5 font-semibold text-red-700 transition-colors disabled:opacity-40 dark:bg-red-950 dark:text-red-300">
               <Trash2 className="h-4 w-4" /> {t('organizer.delete')}
             </button>
-            <button onClick={restoreAll} disabled={busy} className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 font-semibold disabled:opacity-40 dark:bg-slate-800">
+            <button onClick={restoreAll} disabled={busy || !hasDeleted} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 font-semibold transition-colors disabled:opacity-40 dark:bg-slate-800">
               <Undo2 className="h-4 w-4" /> {t('organizer.restore')}
             </button>
-            <button onClick={() => build(false)} disabled={busy || alive === 0} className="ml-auto rounded-xl bg-indigo-600 px-4 py-1.5 font-semibold text-white disabled:opacity-50">
+            <button onClick={() => build(false)} disabled={busy || alive === 0} className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-1.5 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 sm:ml-auto">
               {busy ? t('processing') : t('organizer.save')}
             </button>
-            <button onClick={() => build(true)} disabled={busy || selected.size === 0} className="rounded-xl bg-emerald-600 px-4 py-1.5 font-semibold text-white disabled:opacity-50">
-              {t('organizer.extractSel')}
+            <button onClick={() => build(true)} disabled={busy || selected.size === 0} className="min-h-[40px] rounded-xl bg-emerald-600 px-4 py-1.5 font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50">
+              {busy ? t('processing') : t('organizer.extractSel')}
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
             {thumbs.map((th, i) => (
               <div
                 key={`${th.src}-${i}`}
@@ -166,20 +204,26 @@ export function OrganizerPage() {
                   th.deleted && 'opacity-30 grayscale'
                 )}
               >
-                <img
-                  src={th.url}
-                  alt={`page ${th.src + 1}`}
-                  loading="lazy"
-                  className="w-full rounded-lg"
-                  style={{ transform: `rotate(${th.rot}deg)` }}
-                />
-                <p className="py-1 text-center text-xs text-slate-500">
+                <div className="flex aspect-[3/4] items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+                  <img
+                    src={th.url}
+                    alt={`page ${th.src + 1}`}
+                    loading="lazy"
+                    className="max-h-full max-w-full object-contain transition-transform"
+                    style={{ transform: `rotate(${th.rot}deg)` }}
+                  />
+                </div>
+                <p className="truncate py-1 text-center text-xs text-slate-500">
                   {th.src + 1}{th.rot ? ` ⟳${th.rot}°` : ''}{th.deleted ? ` · ${t('organizer.deleted')}` : ''}
                 </p>
+                <div className="flex gap-1">
+                  <button onClick={(e) => moveCard(e, i, -1)} disabled={busy || i === 0} aria-label={t('moveUp') as string} className="grid min-h-[36px] flex-1 place-items-center rounded-lg bg-slate-100 text-base leading-none disabled:opacity-30 dark:bg-slate-800">‹</button>
+                  <button onClick={(e) => moveCard(e, i, 1)} disabled={busy || i === thumbs.length - 1} aria-label={t('moveDown') as string} className="grid min-h-[36px] flex-1 place-items-center rounded-lg bg-slate-100 text-base leading-none disabled:opacity-30 dark:bg-slate-800">›</button>
+                </div>
               </div>
             ))}
           </div>
-          {file && <p className="text-xs text-slate-400">{file.name}</p>}
+          {file && <p className="max-w-full truncate text-xs text-slate-400">{file.name}</p>}
         </>
       )}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="organized.pdf" />}

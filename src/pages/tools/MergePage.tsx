@@ -53,8 +53,9 @@ export function MergePage() {
   };
 
   const move = (id: number, dir: -1 | 1) => {
-    // Порядок изменился — старый результат больше не соответствует настройкам
+    // Порядок изменился — старый результат и ошибки больше не актуальны
     setResult(null);
+    setError(null);
     setItems((p) => {
       const i = p.findIndex((x) => x.id === id);
       const j = i + dir;
@@ -97,9 +98,14 @@ export function MergePage() {
 
       {items.length > 0 && (
         <div className="space-y-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-semibold">{t('files')} · {items.length}</span>
-            <button onClick={() => { setItems([]); setResult(null); }} className="text-xs text-slate-500 hover:text-red-500">{t('clear')}</button>
+            <div className="flex items-center gap-1">
+              {items.some((i) => i.pages === 0) && (
+                <button onClick={() => { setError(null); setResult(null); setItems((p) => p.filter((x) => x.pages !== 0)); }} className="rounded-lg px-2 py-1.5 text-xs font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40">{t('mergePage.removeBad')}</button>
+              )}
+              <button onClick={() => { setItems([]); setResult(null); setError(null); }} className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:text-red-500">{t('clear')}</button>
+            </div>
           </div>
           <ul className="thin-scroll max-h-80 space-y-2 overflow-auto">
             {items.map((item, pos) => (
@@ -109,34 +115,38 @@ export function MergePage() {
                     {pos + 1}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.file.name}</span>
-                  <span className="shrink-0 text-xs text-slate-400">
+                  <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">
                     {item.pages === null ? '…' : item.pages === 0 ? '⚠' : `${item.pages} ${t('pagesShort')}`}
                     {' · '}{formatBytes(item.file.size)}
                   </span>
-                  <button onClick={() => move(item.id, -1)} disabled={pos === 0} aria-label={t('moveUp') as string} className="rounded-lg p-1 hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-slate-700">
+                  <span className="shrink-0 text-xs text-slate-400 sm:hidden">
+                    {item.pages === null ? '…' : item.pages === 0 ? `⚠ ${t('mergePage.badFileShort')}` : `${item.pages} ${t('pagesShort')}`}
+                  </span>
+                  <button onClick={() => move(item.id, -1)} disabled={busy || pos === 0} aria-label={t('moveUp') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-slate-700">
                     <ArrowUp className="h-4 w-4" />
                   </button>
-                  <button onClick={() => move(item.id, 1)} disabled={pos === items.length - 1} aria-label={t('moveDown') as string} className="rounded-lg p-1 hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-slate-700">
+                  <button onClick={() => move(item.id, 1)} disabled={busy || pos === items.length - 1} aria-label={t('moveDown') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-slate-700">
                     <ArrowDown className="h-4 w-4" />
                   </button>
-                  <button onClick={() => { setResult(null); setItems((p) => p.filter((x) => x.id !== item.id)); }} aria-label={t('remove') as string} className="rounded-lg p-1 text-slate-400 hover:text-red-500">
+                  <button onClick={() => { setError(null); setResult(null); setItems((p) => p.filter((x) => x.id !== item.id)); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 <input
                   value={item.range}
-                  onChange={(e) => { setResult(null); setItems((p) => p.map((x) => (x.id === item.id ? { ...x, range: e.target.value } : x))); }}
+                  disabled={busy}
+                  onChange={(e) => { setError(null); setResult(null); setItems((p) => p.map((x) => (x.id === item.id ? { ...x, range: e.target.value } : x))); }}
                   placeholder={item.pages ? `${t('rangesPh')} (${t('allPages')}: ${item.pages})` : (t('rangesPh') as string)}
-                  className="mt-2 w-full rounded-lg border bg-white px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+                  className="mt-2 w-full rounded-lg border bg-white px-2.5 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
                 />
               </li>
             ))}
           </ul>
-          <button onClick={run} disabled={busy}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+          <button onClick={run} disabled={busy || items.length === 0}
+            className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
             {busy ? t('processing') : t('mergePage.doMerge')}
           </button>
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
         </div>
       )}
 

@@ -47,14 +47,23 @@ export function ImagesPage() {
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<Found[]>([]);
   const [empty, setEmpty] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
 
-  const run = async (f: File) => {
-    if (isTooBig(f)) return setError(t('fileTooBig') as string);
+  const resetFound = () => {
     found.forEach((x) => URL.revokeObjectURL(x.url));
+    setFound([]);
+    setEmpty(false);
+  };
+
+  const run = async (f: File | undefined) => {
+    if (!f || busy) return;
+    resetFound();
+    if (isTooBig(f)) {
+      setFile(null);
+      return setError(t('fileTooBig') as string);
+    }
     setFile(f);
     setError(null);
-    setEmpty(false);
-    setFound([]);
     setBusy(true);
     try {
       const list = await extractImages(new Uint8Array(await f.arrayBuffer()));
@@ -76,29 +85,48 @@ export function ImagesPage() {
   };
 
   const downloadZip = async () => {
-    const zip = new JSZip();
-    for (const f of found) zip.file(f.name, await f.blob.arrayBuffer());
-    const blob = await zip.generateAsync({ type: 'blob' });
-    downloadBytes(new Uint8Array(await blob.arrayBuffer()), `${file?.name.replace(/\.pdf$/i, '') ?? 'images'}-images.zip`, 'application/zip');
+    if (zipBusy) return;
+    setZipBusy(true);
+    try {
+      const zip = new JSZip();
+      for (const f of found) zip.file(f.name, await f.blob.arrayBuffer());
+      const blob = await zip.generateAsync({ type: 'blob' });
+      downloadBytes(new Uint8Array(await blob.arrayBuffer()), `${file?.name.replace(/\.pdf$/i, '') ?? 'images'}-images.zip`, 'application/zip');
+    } finally {
+      setZipBusy(false);
+    }
   };
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('images.title')}</h1>
       <p className="text-sm text-slate-500">{t('images.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => run(f[0])} />
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      {empty && <p className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t('images.empty')}</p>}
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => run(f[0])} />
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {file && (
+        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
+          <span className="min-w-0 flex-1 truncate">📄 {file.name}{busy ? ` · ${t('processing')}` : ''}</span>
+          <button onClick={() => { setFile(null); resetFound(); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
+        </div>
+      )}
+      {busy && (
+        <div className="grid animate-pulse grid-cols-2 gap-3 sm:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-32 rounded-xl bg-slate-200 dark:bg-slate-800" />
+          ))}
+        </div>
+      )}
+      {empty && <p className="animate-enter rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t('images.empty')}</p>}
       {found.length > 0 && (
         <>
-          <button onClick={downloadZip} className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700">
-            {t('downloadAllZip')} · {found.length}
+          <button onClick={downloadZip} disabled={zipBusy} className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50">
+            {zipBusy ? t('processing') : <>{t('downloadAllZip')} · {found.length}</>}
           </button>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {found.map((f, i) => (
-              <a key={i} href={f.url} download={f.name} className="overflow-hidden rounded-xl border bg-white dark:border-slate-800 dark:bg-slate-900">
+              <a key={i} href={f.url} download={f.name} className="animate-enter overflow-hidden rounded-xl border bg-white transition dark:border-slate-800 dark:bg-slate-900">
                 <img src={f.url} alt={f.name} loading="lazy" className="h-32 w-full bg-slate-100 object-contain dark:bg-slate-800" />
-                <p className="p-2 text-center text-xs text-slate-500">{f.name} · {formatBytes(f.size)} ↓</p>
+                <p className="truncate p-2 text-center text-xs text-slate-500">{f.name} · {formatBytes(f.size)} ↓</p>
               </a>
             ))}
           </div>

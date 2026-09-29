@@ -44,15 +44,21 @@ export function Home() {
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-slate-600 dark:text-slate-300">{t('subtitle')}</p>
         <div className="mx-auto mt-6 flex max-w-xl items-center gap-2 rounded-2xl border bg-white px-4 py-3 shadow-soft dark:border-slate-700 dark:bg-slate-900">
-          <Search className="h-5 w-5 text-slate-400" />
+          <Search className="h-5 w-5 shrink-0 text-slate-400" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t('searchTools') as string}
             aria-label={t('searchTools') as string}
-            className="w-full bg-transparent outline-none"
+            className="w-full min-w-0 bg-transparent outline-none"
           />
+          {q && (
+            <button onClick={() => setQ('')} aria-label={t('clearSearch') as string} title={t('clearSearch') as string} className="grid min-h-[32px] min-w-[32px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">✕</button>
+          )}
         </div>
+        {q.trim() && (
+          <p className="mt-2 text-sm text-slate-500">{t('foundTools', { n: list.length })}</p>
+        )}
       </section>
 
       <section className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -62,7 +68,7 @@ export function Home() {
             <Link
               key={tool.key}
               to={tool.to}
-              className="group rounded-2xl border bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-soft dark:border-slate-800 dark:bg-slate-900"
+              className="group rounded-2xl border bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900"
             >
               <span className="grid h-11 w-11 place-items-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300">
                 <Icon className="h-5 w-5" />

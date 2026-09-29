@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -61,6 +61,14 @@ export function OcrPage() {
   const [outMode, setOutMode] = useState<'txt' | 'pdf'>('txt');
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const cancelRef = useRef(false);
+
+  const clearResults = () => {
+    setError(null);
+    setNote('');
+    setResults([]);
+    setPdfResult(null);
+  };
 
   const add = (f: File[]) => {
     setError(null);
@@ -77,9 +85,11 @@ export function OcrPage() {
 
   const run = async () => {
     setError(null);
+    setNote('');
     setResults([]);
     setPdfResult(null);
     if (files.length === 0) return setError(t('needFiles') as string);
+    cancelRef.current = false;
     setBusy(true);
     setProgress(0);
     try {
@@ -113,6 +123,7 @@ export function OcrPage() {
       const wantPdf = outMode === 'pdf';
       try {
         for (let i = 0; i < images.length; i++) {
+          if (cancelRef.current) break;
           setStatus(`${t('ocr.recognizing')} ${i + 1}/${images.length}`);
           const url = URL.createObjectURL(images[i].blob);
           try {
@@ -131,7 +142,7 @@ export function OcrPage() {
       } finally {
         await worker.terminate();
       }
-      if (wantPdf) {
+      if (wantPdf && !cancelRef.current) {
         if (pdfParts.length === 0) throw new Error('no-pdf');
         const { mergePdfs } = await import('../../features/pdf-core/pdfOps');
         setPdfResult(await mergePdfs(pdfParts));
@@ -159,8 +170,8 @@ export function OcrPage() {
         disabled={busy}
         onFiles={add}
       />
-      {note && <p className="text-sm text-amber-600">{note}</p>}
-      <FileList files={files} onRemove={(i) => { setFiles((p) => p.filter((_, x) => x !== i)); setResults([]); setPdfResult(null); }} onClear={() => { setFiles([]); setResults([]); setPdfResult(null); }} />
+      {note && <p className="animate-enter text-sm text-amber-600">{note}</p>}
+      <FileList files={files} disabled={busy} onRemove={(i) => { setFiles((p) => p.filter((_, x) => x !== i)); clearResults(); }} onClear={() => { setFiles([]); clearResults(); }} />
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('ocr.language')}:</span>
@@ -168,24 +179,26 @@ export function OcrPage() {
           <button
             key={l}
             disabled={busy}
-            onClick={() => { setLang(l); setResults([]); setPdfResult(null); }}
-            className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
+            aria-pressed={lang === l}
+            onClick={() => { setLang(l); clearResults(); }}
+            className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.${l}`) as string}
           </button>
         ))}
-        <button onClick={run} disabled={busy} className="ml-auto rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        <button onClick={run} disabled={busy || files.length === 0} className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 max-sm:w-full sm:ml-auto">
           {busy ? t('processing') : t('ocr.do')}
         </button>
       </div>
-      <div className="flex items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('ocr.output')}:</span>
         {(['txt', 'pdf'] as const).map((m) => (
           <button
             key={m}
             disabled={busy}
-            onClick={() => { setOutMode(m); setResults([]); setPdfResult(null); }}
-            className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${outMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
+            aria-pressed={outMode === m}
+            onClick={() => { setOutMode(m); clearResults(); }}
+            className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${outMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.out_${m}`) as string}
           </button>
@@ -193,28 +206,31 @@ export function OcrPage() {
       </div>
 
       {busy && (
-        <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="animate-enter rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
+            <div className={`h-full bg-indigo-500 transition-all ${progress === 0 ? 'w-1/4 animate-pulse' : ''}`} style={progress === 0 ? undefined : { width: `${Math.round(progress * 100)}%` }} />
           </div>
-          <p className="mt-2 text-xs text-slate-500">{status}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-xs text-slate-500">{status}</p>
+            <button onClick={() => { cancelRef.current = true; setStatus(t('ocr.cancelling') as string); }} className="min-h-[36px] shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold transition-colors dark:bg-slate-800">{t('ocr.cancel')}</button>
+          </div>
         </div>
       )}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
       {pdfResult && <ResultCard title={t('ready') as string} bytes={pdfResult} fileName="searchable.pdf" />}
 
       {results.length > 0 && (
-        <div className="space-y-3 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">{t('ready')} · {results.length}</span>
-            <button onClick={downloadAll} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white">
+        <div className="animate-enter space-y-3 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t('ready')} · {results.length}</span>
+            <button onClick={downloadAll} className="min-h-[40px] rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-[0.98]">
               {t('download')} .txt
             </button>
           </div>
           {results.map((r, i) => (
             <details key={i} className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800" open={i === 0}>
-              <summary className="cursor-pointer font-semibold">{r.name}</summary>
-              <p className="mt-2 whitespace-pre-wrap text-slate-700 dark:text-slate-200">{r.text || '—'}</p>
+              <summary className="cursor-pointer truncate py-1 font-semibold" title={r.name}>{r.name}</summary>
+              <p className="mt-2 break-words whitespace-pre-wrap text-slate-700 dark:text-slate-200">{r.text || '—'}</p>
             </details>
           ))}
         </div>

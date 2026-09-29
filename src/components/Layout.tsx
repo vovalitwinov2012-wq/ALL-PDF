@@ -20,23 +20,23 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50/80 via-white to-white text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
       <header className="sticky top-0 z-40 border-b border-indigo-100/60 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-          <NavLink to="/" className="flex items-center gap-2 font-extrabold tracking-tight">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-soft">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
+          <NavLink to="/" className="flex min-w-0 items-center gap-2 font-extrabold tracking-tight">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-soft">
               <FileText className="h-5 w-5" />
             </span>
-            ALL PDF
+            <span className="whitespace-nowrap text-sm sm:text-base">ALL PDF</span>
           </NavLink>
           <span className="hidden rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline dark:bg-emerald-950 dark:text-emerald-300">
             {t('localBadge')}
           </span>
-          <div className="ml-auto flex items-center gap-2">
-            <NavLink to="/" className="rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-50 dark:hover:bg-slate-800">{t('home')}</NavLink>
-            <NavLink to="/about" className="rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-50 dark:hover:bg-slate-800">{t('aboutNav')}</NavLink>
-            <button onClick={toggleLang} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-sm dark:border-slate-700" title={t('language')}>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <NavLink to="/" className="hidden rounded-lg px-3 py-2 text-sm hover:bg-indigo-50 sm:inline-flex dark:hover:bg-slate-800">{t('home')}</NavLink>
+            <NavLink to="/about" className="hidden rounded-lg px-3 py-2 text-sm hover:bg-indigo-50 md:inline-flex dark:hover:bg-slate-800">{t('aboutNav')}</NavLink>
+            <button onClick={toggleLang} className="inline-flex min-h-[40px] items-center gap-1 rounded-lg border px-2.5 py-1.5 text-sm dark:border-slate-700" title={t('language')}>
               <Globe className="h-4 w-4" /> {i18n.language === 'ru' ? 'RU' : 'EN'}
             </button>
-            <button onClick={() => setDark(!dark)} className="rounded-lg border p-1.5 dark:border-slate-700" title={t('theme')}>
+            <button onClick={() => setDark(!dark)} className="grid min-h-[40px] min-w-[40px] place-items-center rounded-lg border dark:border-slate-700" title={t('theme')}>
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
           </div>
@@ -46,6 +46,10 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="border-t py-6 text-center text-xs text-slate-500 dark:border-slate-800">
+        <div className="mb-2 flex items-center justify-center gap-4 text-sm sm:hidden">
+          <NavLink to="/" className="font-medium text-indigo-600 dark:text-indigo-400">{t('home')}</NavLink>
+          <NavLink to="/about" className="font-medium text-indigo-600 dark:text-indigo-400">{t('aboutNav')}</NavLink>
+        </div>
         ALL PDF · {t('footerNote')}
       </footer>
     </div>

@@ -6,13 +6,13 @@ export function ResultCard({ title, bytes, fileName, mime }: { title: string; by
   const { t } = useTranslation();
   const save = () => downloadBytes(bytes, fileName, mime);
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
-      <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">✓ {title} · {formatBytes(bytes.length)}</p>
+    <div className="animate-enter rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
+      <p className="break-words text-sm font-semibold text-emerald-700 dark:text-emerald-300">✓ {title} · {formatBytes(bytes.length)}</p>
       <button
         onClick={save}
-        className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+        className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-[0.98]"
       >
-        <Download className="h-4 w-4" /> {t('download')} · {fileName}
+        <Download className="h-4 w-4 shrink-0" /> {t('download')} · <span className="min-w-0 flex-1 truncate text-left">{fileName}</span>
       </button>
     </div>
   );

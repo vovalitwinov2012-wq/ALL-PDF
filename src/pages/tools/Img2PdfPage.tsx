@@ -93,23 +93,26 @@ export function Img2PdfPage() {
   const [size, setSize] = useState<'fit' | 'a4'>('a4');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
   const [result, setResult] = useState<Uint8Array | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const MAX_PHOTOS = 50;
 
   const add = (f: File[]) => {
     setError(null);
+    setNote('');
     setResult(null);
     const oversized = f.filter((x) => isTooBig(x));
     const ok = f.filter((x) => !isTooBig(x));
     const merged = [...files, ...ok].slice(0, MAX_PHOTOS);
     if (oversized.length > 0) setError(t('fileTooBig') as string);
-    else if ([...files, ...ok].length > MAX_PHOTOS) setError(t('cappedFiles', { n: MAX_PHOTOS }) as string);
+    if ([...files, ...ok].length > MAX_PHOTOS) setNote(t('cappedFiles', { n: MAX_PHOTOS }) as string);
     setFiles(merged);
   };
 
   const move = (i: number, dir: -1 | 1) => {
     setResult(null);
+    setError(null);
     setFiles((p) => {
       const j = i + dir;
       if (j < 0 || j >= p.length) return p;
@@ -156,18 +159,20 @@ export function Img2PdfPage() {
           e.target.value = '';
         }}
       />
-      <FileList files={files} onMove={move} onRemove={(i) => { setResult(null); setFiles((p) => p.filter((_, x) => x !== i)); }} onClear={() => { setFiles([]); setResult(null); }} />
-      <div className="flex gap-2">
+      <p className="text-xs text-slate-500">{t('convertPage.photoLimit', { n: MAX_PHOTOS })}</p>
+      <FileList files={files} disabled={busy} onMove={move} onRemove={(i) => { setError(null); setNote(''); setResult(null); setFiles((p) => p.filter((_, x) => x !== i)); }} onClear={() => { setError(null); setNote(''); setFiles([]); setResult(null); }} />
+      <div className="flex flex-wrap items-center gap-2">
         {(['fit', 'a4'] as const).map((s) => (
-          <button key={s} disabled={busy} onClick={() => { setSize(s); setResult(null); }} className={`rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40 ${size === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+          <button key={s} disabled={busy} aria-pressed={size === s} onClick={() => { setSize(s); setError(null); setResult(null); }} className={`min-h-[40px] rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${size === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
             {t(`convertPage.${s}`) as string}
           </button>
         ))}
-        <button onClick={run} disabled={busy} className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
+        <button onClick={run} disabled={busy || files.length === 0} className="min-h-[44px] flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50 max-sm:w-full max-sm:flex-none max-sm:basis-full">
           {busy ? t('processing') : t('convertPage.do')}
         </button>
       </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {note && <p className="animate-enter text-sm text-amber-600">{note}</p>}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="images.pdf" />}
     </div>
   );

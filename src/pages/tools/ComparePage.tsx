@@ -44,12 +44,22 @@ export function ComparePage() {
   const [truncated, setTruncated] = useState(false);
   const [hideSame, setHideSame] = useState(true);
 
-  const pick = (f: File, slot: 'a' | 'b') => {
+  const pick = (f: File | undefined, slot: 'a' | 'b') => {
+    if (!f) return;
     if (isTooBig(f)) return setError(t('fileTooBig') as string);
     setError(null);
     setPages([]);
+    setTruncated(false);
     if (slot === 'a') setA(f);
     else setB(f);
+  };
+
+  const clearSlot = (slot: 'a' | 'b') => {
+    setError(null);
+    setPages([]);
+    setTruncated(false);
+    if (slot === 'a') setA(null);
+    else setB(null);
   };
 
   const run = async () => {
@@ -79,30 +89,41 @@ export function ComparePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('compare.title')}</h1>
-      <p className="text-sm text-slate-500">{t('compare.hint')}</p>
+      <p className="text-sm text-slate-500">{t('compare.hint', { n: MAX_PAGES })}</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <p className="mb-1 text-sm font-semibold">A {a && <span className="font-normal text-slate-500">· {a.name}</span>}</p>
-          <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => pick(f[0], 'a')} />
-        </div>
-        <div>
-          <p className="mb-1 text-sm font-semibold">B {b && <span className="font-normal text-slate-500">· {b.name}</span>}</p>
-          <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => pick(f[0], 'b')} />
-        </div>
+        {(['a', 'b'] as const).map((slot) => {
+          const f = slot === 'a' ? a : b;
+          return (
+            <div key={slot} className="min-w-0">
+              <div className="mb-1 flex min-w-0 items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {t(`compare.slot${slot.toUpperCase()}`)}{f && <span className="font-normal text-slate-500"> · {f.name}</span>}
+                </p>
+                {f && (
+                  <button onClick={() => clearSlot(slot)} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[32px] min-w-[32px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                )}
+              </div>
+              <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(fl) => pick(fl[0], slot)} />
+            </div>
+          );
+        })}
       </div>
-      <div className="flex items-center gap-3">
-        <button onClick={run} disabled={!a || !b || busy} className="rounded-xl bg-indigo-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <button onClick={run} disabled={!a || !b || busy} className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50 sm:w-auto">
           {busy ? t('processing') : t('compare.do')}
         </button>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="checkbox" checked={hideSame} onChange={(e) => setHideSame(e.target.checked)} />
-          {t('compare.hideSame')}
-        </label>
+        {pages.length > 0 && (
+          <label className="flex min-h-[40px] items-center gap-2 text-sm">
+            <input type="checkbox" checked={hideSame} onChange={(e) => setHideSame(e.target.checked)} className="h-5 w-5" />
+            {t('compare.hideSame')}
+          </label>
+        )}
       </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
       {truncated && <p className="text-sm text-amber-600">{t('compare.truncated', { n: MAX_PAGES })}</p>}
+      {busy && <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />}
       {pages.length > 0 && (
-        <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="animate-enter rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
           <p className="mb-3 font-semibold">
             {t('compare.summary', { added: totalAdded, removed: totalRemoved })}
           </p>
@@ -111,23 +132,25 @@ export function ComparePage() {
             if (visible.length === 0) return null;
             return (
               <details key={i} className="mb-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800" open={p.added + p.removed > 0}>
-                <summary className="cursor-pointer font-semibold">
+                <summary className="cursor-pointer py-1 font-semibold">
                   {t('compare.page', { n: i + 1 })} · <span className="text-emerald-600">+{p.added}</span> <span className="text-red-500">−{p.removed}</span>
                 </summary>
-                <div className="mt-2 space-y-0.5 font-mono text-xs">
-                  {visible.map((l, j) => (
-                    <p
-                      key={j}
-                      className={cn(
-                        'rounded px-2 py-0.5',
-                        l.type === 'add' && 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
-                        l.type === 'del' && 'bg-red-100 text-red-900 line-through dark:bg-red-950 dark:text-red-200',
-                        l.type === 'same' && 'text-slate-500'
-                      )}
-                    >
-                      {l.type === 'add' ? '+ ' : l.type === 'del' ? '− ' : '  '}{l.text || ' '}
-                    </p>
-                  ))}
+                <div className="thin-scroll mt-2 overflow-x-auto">
+                  <div className="min-w-max space-y-0.5 pr-2 font-mono text-xs">
+                    {visible.map((l, j) => (
+                      <p
+                        key={j}
+                        className={cn(
+                          'whitespace-pre rounded px-2 py-0.5',
+                          l.type === 'add' && 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+                          l.type === 'del' && 'bg-red-100 text-red-900 line-through dark:bg-red-950 dark:text-red-200',
+                          l.type === 'same' && 'text-slate-500'
+                        )}
+                      >
+                        {l.type === 'add' ? '+ ' : l.type === 'del' ? '− ' : '  '}{l.text || ' '}
+                      </p>
+                    ))}
+                  </div>
                 </div>
               </details>
             );

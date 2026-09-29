@@ -14,8 +14,14 @@ export function RepairPage() {
   const [result, setResult] = useState<Uint8Array | null>(null);
   const [info, setInfo] = useState<{ pages: number; before: number; after: number } | null>(null);
 
-  const run = async (f: File) => {
-    if (isTooBig(f)) return setError(t('fileTooBig') as string);
+  const run = async (f: File | undefined) => {
+    if (!f || busy) return;
+    if (isTooBig(f)) {
+      setFile(null);
+      setResult(null);
+      setInfo(null);
+      return setError(t('fileTooBig') as string);
+    }
     setFile(f);
     setError(null);
     setResult(null);
@@ -36,16 +42,27 @@ export function RepairPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('repair.title')}</h1>
       <p className="text-sm text-slate-500">{t('repair.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => run(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => run(f[0])} />
       {busy && (
         <p className="inline-flex items-center gap-2 text-sm text-slate-500">
           <Wrench className="h-4 w-4 animate-spin" /> {t('processing')}
         </p>
       )}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {file && !busy && !info && (
+        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
+          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
+          <button onClick={() => { setFile(null); setInfo(null); setResult(null); setError(null); }} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500">✕</button>
+        </div>
+      )}
       {info && (
-        <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
-          {t('pages')}: <b>{info.pages}</b> · {t('was')}: <b>{formatBytes(info.before)}</b> → {t('became')}: <b>{formatBytes(info.after)}</b>
+        <div className="animate-enter rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="max-w-full truncate font-medium" title={file?.name ?? ''}>📄 {file?.name}</p>
+          <p className="mt-1 flex flex-wrap gap-x-2">
+            <span>{t('pages')}: <b>{info.pages}</b></span>
+            <span>{t('was')}: <b>{formatBytes(info.before)}</b></span>
+            <span>→ {t('became')}: <b>{formatBytes(info.after)}</b></span>
+          </p>
         </div>
       )}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName={(file?.name.replace(/\.pdf$/i, '') ?? 'doc') + '-fixed.pdf'} />}

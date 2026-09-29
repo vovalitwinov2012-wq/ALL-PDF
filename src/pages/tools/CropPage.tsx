@@ -17,8 +17,14 @@ export function CropPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
 
-  const open = async (f: File) => {
-    if (isTooBig(f)) return setError(t('fileTooBig') as string);
+  const open = async (f: File | undefined) => {
+    if (!f) return;
+    if (isTooBig(f)) {
+      setFile(null);
+      setPageCount(null);
+      setResult(null);
+      return setError(t('fileTooBig') as string);
+    }
     setFile(f);
     setResult(null);
     setError(null);
@@ -31,6 +37,7 @@ export function CropPage() {
 
   const set = (k: keyof CropMargins, v: number) => {
     setResult(null);
+    setError(null);
     setM((p) => ({ ...p, [k]: Math.max(0, Math.floor(v) || 0) }));
   };
 
@@ -40,7 +47,12 @@ export function CropPage() {
     setError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const pages = ranges.trim() && pageCount ? parsePageRanges(ranges, pageCount) : 'all';
+      const trimmed = ranges.trim();
+      const pages = trimmed && pageCount ? parsePageRanges(trimmed, pageCount) : 'all';
+      if (Array.isArray(pages) && pages.length === 0) {
+        setBusy(false);
+        return setError(t('crop.badRange', { n: pageCount }) as string);
+      }
       setResult(await cropPdf(bytes, m, pages));
     } catch {
       setError(t('failed') as string);
@@ -53,7 +65,13 @@ export function CropPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('crop.title')}</h1>
       <p className="text-sm text-slate-500">{t('crop.hint')}</p>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => open(f[0])} />
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => open(f[0])} />
+      {file && (
+        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
+          <span className="min-w-0 flex-1 truncate">📄 {file.name}{pageCount !== null ? ` · ${pageCount} ${t('pagesShort')}` : ''}</span>
+          <button onClick={() => { setFile(null); setPageCount(null); setResult(null); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
+        </div>
+      )}
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-sm font-semibold">{t('crop.margins')} (pt)</p>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -70,14 +88,14 @@ export function CropPage() {
         </div>
         <input
           value={ranges} disabled={busy}
-          onChange={(e) => { setRanges(e.target.value); setResult(null); }}
+          onChange={(e) => { setRanges(e.target.value); setResult(null); setError(null); }}
           placeholder={pageCount ? `${t('crop.pagesPh')} (${t('allPages')}: ${pageCount})` : (t('crop.pagesPh') as string)}
-          className="mt-3 w-full rounded-xl border px-3 py-2 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800"
+          className="mt-3 w-full rounded-xl border px-3 py-2.5 text-sm disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800"
         />
-        <button onClick={run} disabled={!file || busy} className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
+        <button onClick={run} disabled={!file || busy} className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
           {busy ? t('processing') : t('crop.do')}
         </button>
-        {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+        {error && <p className="animate-enter mt-2 text-sm text-red-500">{error}</p>}
       </div>
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="cropped.pdf" />}
     </div>

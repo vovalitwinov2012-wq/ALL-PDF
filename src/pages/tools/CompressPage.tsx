@@ -18,7 +18,7 @@ export function CompressPage() {
   const [result, setResult] = useState<Uint8Array | null>(null);
 
   const run = async () => {
-    if (!file) return;
+    if (!file) return setError(t('needFiles') as string);
     setBusy(true);
     setError(null);
     try {
@@ -34,23 +34,31 @@ export function CompressPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('compressPage.title')}</h1>
-      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} onFiles={(f) => {
-        if (isTooBig(f[0])) return setError(t('fileTooBig') as string);
+      <p className="text-xs text-slate-500">{t('compressPage.note')}</p>
+      <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => {
+        const f0 = f[0];
+        if (!f0) return;
+        if (isTooBig(f0)) return setError(t('fileTooBig') as string);
         setError(null);
-        setFile(f[0]);
+        setFile(f0);
         setResult(null);
       }} />
       {file && (
-        <div className="rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
-          {t('was')}: <b>{formatBytes(file.size)}</b>
-          {result && <> → {t('became')}: <b>{formatBytes(result.length)}</b> ({deltaText(file.size, result.length)})</>}
+        <div className="flex items-center gap-2 rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+          <span className="min-w-0 flex-1 truncate">
+            {t('was')}: <b>{formatBytes(file.size)}</b>
+            {result && <> → {t('became')}: <b>{formatBytes(result.length)}</b> ({deltaText(file.size, result.length)})</>}
+          </span>
+          <button onClick={() => { setFile(null); setResult(null); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
         </div>
       )}
-      <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50">
+      <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
         {busy ? t('processing') : t('compressPage.do')}
       </button>
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      <p className="text-xs text-slate-500">{t('compressPage.note')}</p>
+      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {file && result && result.length >= file.size && (
+        <p className="animate-enter text-sm text-amber-600">{t('compressPage.grew')}</p>
+      )}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="compressed.pdf" />}
     </div>
   );
