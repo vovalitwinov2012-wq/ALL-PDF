@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Wrench } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
 import { formatBytes, isTooBig } from '../../lib/utils';
 import { repairPdf } from '../../features/pdf-core/pages';
@@ -48,12 +49,9 @@ export function RepairPage() {
           <Wrench className="h-4 w-4 animate-spin" /> {t('processing')}
         </p>
       )}
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {file && !busy && !info && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={() => { setFile(null); setInfo(null); setResult(null); setError(null); }} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500">✕</button>
-        </div>
+        <FileChip name={file.name} onRemove={() => { setFile(null); setInfo(null); setResult(null); setError(null); }} />
       )}
       {info && (
         <div className="animate-enter rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">

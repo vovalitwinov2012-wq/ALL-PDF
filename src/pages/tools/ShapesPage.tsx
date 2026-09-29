@@ -51,8 +51,22 @@ export function ShapesPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [dzoom, setDzoom] = useState(1);
+  const [toast, setToast] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const navSeq = useRef(0);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<null | { d0: number; f0: number; cx: number; cy: number; sl: number; st: number }>(null);
+  const pinchF = useRef(1);
+  const lastPointer = useRef('mouse');
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 1800);
+  };
 
   const renderPage = async (data: Uint8Array, idx: number, z = 1) => {
     const seq = ++navSeq.current;
@@ -96,6 +110,10 @@ export function ShapesPage() {
     setResult(null);
     setShapes({});
     setZoom(1);
+    setDzoom(1);
+    pinchF.current = 1;
+    gesture.current = null;
+    pointers.current.clear();
     setBusy(true);
     try {
       const data = new Uint8Array(await f.arrayBuffer());
@@ -137,19 +155,30 @@ export function ShapesPage() {
     if (!vp) return;
     const [x1, y1] = vp.toPdf(a.x, a.y);
     const [x2, y2] = vp.toPdf(b.x, b.y);
-    if (Math.hypot(x2 - x1, y2 - y1) < 3 && (tool === 'line' || tool === 'arrow')) return;
+    // Порог отсева под палец больше: дрожание пальца не должно давать ложных штрихов
+    const MIN = lastPointer.current === 'mouse' ? 3 : 7;
+    if (Math.hypot(x2 - x1, y2 - y1) < MIN && (tool === 'line' || tool === 'arrow')) {
+      flashToast(t('shapes.tooSmall') as string);
+      return;
+    }
     let s: Shape;
     if (tool === 'rect' || tool === 'highlight' || tool === 'redact') {
       const x = Math.min(x1, x2);
       const y = Math.min(y1, y2);
       const w = Math.abs(x2 - x1);
       const h = Math.abs(y2 - y1);
-      if (w < 3 || h < 3) return;
+      if (w < MIN || h < MIN) {
+        flashToast(t('shapes.tooSmall') as string);
+        return;
+      }
       s = tool === 'rect' ? { kind: 'rect', x, y, w, h, color, width } : { kind: tool, x, y, w, h };
     } else if (tool === 'ellipse') {
       const rx = Math.abs(x2 - x1) / 2;
       const ry = Math.abs(y2 - y1) / 2;
-      if (rx < 3 || ry < 3) return;
+      if (rx < MIN || ry < MIN) {
+        flashToast(t('shapes.tooSmall') as string);
+        return;
+      }
       s = { kind: 'ellipse', cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, rx, ry, color, width };
     } else {
       s = { kind: tool, x1, y1, x2, y2, color, width };
@@ -178,6 +207,65 @@ export function ShapesPage() {
       setError(t('failed') as string);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+
+  // Один палец — рисуем, два — щипок (масштаб) + панорама.
+  const onSvgDown = (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    lastPointer.current = (e.nativeEvent as PointerEvent).pointerType || 'mouse';
+    if (pointers.current.size === 2) {
+      const [p1, p2] = [...pointers.current.values()];
+      gesture.current = {
+        d0: Math.max(1, dist2(p1, p2)),
+        f0: pinchF.current,
+        cx: (p1.x + p2.x) / 2,
+        cy: (p1.y + p2.y) / 2,
+        sl: scrollRef.current?.scrollLeft ?? 0,
+        st: scrollRef.current?.scrollTop ?? 0
+      };
+      setDraft(null);
+      return;
+    }
+    if (pointers.current.size > 2) return;
+    setDraft({ a: local(e), b: local(e) });
+  };
+
+  const onSvgMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesture.current;
+    if (g && pointers.current.size >= 2 && vp && boxRef.current) {
+      const [p1, p2] = [...pointers.current.values()];
+      const f = Math.min(3, Math.max(1, (g.f0 * Math.max(1, dist2(p1, p2))) / g.d0));
+      pinchF.current = f;
+      boxRef.current.style.width = `${vp.w * f}px`;
+      const cx = (p1.x + p2.x) / 2;
+      const cy = (p1.y + p2.y) / 2;
+      if (scrollRef.current) {
+        scrollRef.current.scrollLeft = g.sl - (cx - g.cx);
+        scrollRef.current.scrollTop = g.st - (cy - g.cy);
+      }
+      return;
+    }
+    if (draft) setDraft({ a: draft.a, b: local(e) });
+  };
+
+  const onSvgUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (gesture.current && pointers.current.size < 2) {
+      setDzoom(pinchF.current);
+      gesture.current = null;
+      setDraft(null);
+      return;
+    }
+    if (draft) {
+      commit(draft.a, local(e));
+      setDraft(null);
     }
   };
 
@@ -239,7 +327,7 @@ export function ShapesPage() {
       <h1 className="text-2xl font-extrabold">{t('shapes.title')}</h1>
       <p className="text-sm text-slate-500">{t('shapes.hint')}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => open(f[0])} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {busy && !img && <div className="aspect-[3/4] animate-pulse rounded-2xl bg-slate-200 sm:aspect-[4/3] dark:bg-slate-800" />}
 
       {img && vp && (
@@ -309,20 +397,23 @@ export function ShapesPage() {
             <p className="rounded-xl border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t('shapes.redactNote')}</p>
           )}
 
-          <div ref={boxRef} className="relative mx-auto touch-none select-none overflow-hidden rounded-xl border dark:border-slate-800" style={{ width: vp.w, maxWidth: '100%' }}>
-            <img src={img} alt={`page ${page + 1}`} draggable={false} className="block w-full" />
-            <svg
-              className="absolute inset-0 h-full w-full"
-              viewBox={`0 0 ${vp.w} ${vp.h}`}
-              onPointerDown={(e) => { (e.target as Element).setPointerCapture?.(e.pointerId); setDraft({ a: local(e), b: local(e) }); }}
-              onPointerMove={(e) => { if (draft) setDraft({ a: draft.a, b: local(e) }); }}
-              onPointerUp={(e) => { if (draft) { commit(draft.a, local(e)); setDraft(null); } }}
-              onPointerCancel={() => setDraft(null)}
-            >
-              {(shapes[page] ?? []).map((s, i) => <g key={i}>{toSvg(s)}</g>)}
-              {draftSvg()}
-            </svg>
+          <div ref={scrollRef} className="thin-scroll overflow-auto rounded-xl border dark:border-slate-800">
+            <div ref={boxRef} className="relative mx-auto touch-none select-none" style={{ width: vp.w * dzoom }}>
+              <img src={img} alt={`page ${page + 1}`} draggable={false} className="block w-full" />
+              <svg
+                className="absolute inset-0 h-full w-full"
+                viewBox={`0 0 ${vp.w} ${vp.h}`}
+                onPointerDown={onSvgDown}
+                onPointerMove={onSvgMove}
+                onPointerUp={onSvgUp}
+                onPointerCancel={onSvgUp}
+              >
+                {(shapes[page] ?? []).map((s, i) => <g key={i}>{toSvg(s)}</g>)}
+                {draftSvg()}
+              </svg>
+            </div>
           </div>
+          {toast && <p className="animate-enter text-center text-xs text-slate-500">{toast}</p>}
         </>
       )}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="shapes.pdf" />}

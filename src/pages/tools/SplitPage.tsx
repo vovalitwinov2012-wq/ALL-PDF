@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import JSZip from 'jszip';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
 import { parsePageRanges, isTooBig, downloadBytes } from '../../lib/utils';
 import { splitPdf, loadPdf } from '../../features/pdf-core/pdfOps';
@@ -65,12 +66,7 @@ export function SplitPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('splitPage.title')}</h1>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={pickFile} />
-      {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={() => { setFile(null); setResult(null); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
-      )}
+      {file && <FileChip name={file.name} disabled={busy} onRemove={() => { setFile(null); setResult(null); setError(null); }} />}
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <label className="text-sm font-semibold">{t('splitPage.mode')}</label>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -96,7 +92,7 @@ export function SplitPage() {
         <button onClick={run} disabled={busy || !file} className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
           {busy ? t('processing') : t('splitPage.do')}
         </button>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500">{error}</p>}
+        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName={resultName || `${mode}.pdf`} mime={resultName.endsWith('.zip') ? 'application/zip' : 'application/pdf'} />}
     </div>

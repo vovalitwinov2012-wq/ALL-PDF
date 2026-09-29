@@ -1,6 +1,5 @@
 import { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
 import { About } from './pages/About';
@@ -28,8 +27,13 @@ const SignPage = lazy(() => import('./pages/tools/SignPage').then((m) => ({ defa
 const ProtectPage = lazy(() => import('./pages/tools/ProtectPage').then((m) => ({ default: m.ProtectPage })));
 
 function PageLoader() {
-  const { t } = useTranslation();
-  return <p className="py-16 text-center text-sm text-slate-500">{t('processing')}</p>;
+  return (
+    <div className="mx-auto max-w-3xl space-y-3 py-8" aria-hidden>
+      <div className="h-8 w-2/3 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" />
+      <div className="h-44 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      <div className="h-12 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" />
+    </div>
+  );
 }
 
 const lazyEl = (el: React.ReactNode) => <Suspense fallback={<PageLoader />}>{el}</Suspense>;

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
 import { stampText, stampTextAt, setMetadata, loadPdf } from '../../features/pdf-core/pdfOps';
 import { stampBates } from '../../features/pdf-core/pages';
 import { isTooBig } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 import { cn } from '../../lib/utils';
 
 type H = 'left' | 'center' | 'right';
@@ -25,8 +27,27 @@ export function EditPage() {
   const [text, setText] = useState('ALL PDF');
   const [page, setPage] = useState('1');
   const [allPages, setAllPages] = useState(false);
-  const [pos, setPos] = useState<{ h: H; v: V }>({ h: 'center', v: 'top' });
-  const [size, setSize] = useState(16);
+  const [pos, setPosState] = useState<{ h: H; v: V }>(() => {
+    const p = loadSetting<{ h: string; v: string }>('edit.pos', { h: 'center', v: 'top' });
+    const h = (['left', 'center', 'right'].includes(p?.h) ? p.h : 'center') as H;
+    const v = (['top', 'middle', 'bottom'].includes(p?.v) ? p.v : 'top') as V;
+    return { h, v };
+  });
+  const [size, setSizeState] = useState(() => {
+    const s = loadSetting('edit.size', 16);
+    return typeof s === 'number' && s >= 8 && s <= 48 ? s : 16;
+  });
+  const setPos = (p: { h: H; v: V }) => {
+    setPosState(p);
+    saveSetting('edit.pos', p);
+  };
+  const setSize = (s: number | ((p: number) => number)) => {
+    setSizeState((prev) => {
+      const next = typeof s === 'function' ? (s as (p: number) => number)(prev) : s;
+      saveSetting('edit.size', next);
+      return next;
+    });
+  };
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [batesPrefix, setBatesPrefix] = useState('DOC-');
@@ -110,10 +131,12 @@ export function EditPage() {
       <h1 className="text-2xl font-extrabold">{t('editPage.title')}</h1>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => open(f[0])} />
       {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}{pageCount !== null ? ` · ${pageCount} ${t('pagesShort')}` : ''}</span>
-          <button onClick={() => { setFile(null); setPageCount(null); setResult(null); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
+        <FileChip
+          name={file.name}
+          meta={pageCount !== null ? `${pageCount} ${t('pagesShort')}` : undefined}
+          disabled={busy}
+          onRemove={() => { setFile(null); setPageCount(null); setResult(null); setError(null); }}
+        />
       )}
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -169,12 +192,28 @@ export function EditPage() {
         </div>
 
         <p className="mt-3 text-xs text-slate-400">{t('editPage.allPagesNote')}</p>
+        <div className="mt-2 overflow-hidden rounded-xl border dark:border-slate-700">
+          <div className="relative h-28 bg-slate-50 dark:bg-slate-800">
+            <span
+              className={cn(
+                'absolute max-w-[90%] truncate font-bold text-slate-800 dark:text-slate-100',
+                pos.h === 'left' ? 'left-2' : pos.h === 'right' ? 'right-2' : 'left-1/2 -translate-x-1/2',
+                pos.v === 'top' ? 'top-2' : pos.v === 'bottom' ? 'bottom-2' : 'top-1/2 -translate-y-1/2',
+                pos.h === 'center' && pos.v === 'middle' && '-translate-x-1/2 -translate-y-1/2'
+              )}
+              style={{ fontSize: Math.min(34, Math.max(10, Math.round(size * 1.2))) }}
+            >
+              {text || 'ALL PDF'}
+            </span>
+          </div>
+          <p className="bg-white px-3 py-1.5 text-xs text-slate-500 dark:bg-slate-900">{t('editPage.stampPreview')}</p>
+        </div>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
           <button disabled={!file || busy} onClick={() => apply('stamp')} className="min-h-[44px] rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50">{actLabel('stamp', 'editPage.addText')}</button>
           <button disabled={!file || busy} onClick={() => apply('watermark')} className="min-h-[44px] rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-700 active:scale-[0.98] disabled:opacity-50">{actLabel('watermark', 'editPage.watermark')}</button>
           <button disabled={!file || busy} onClick={() => apply('numbers')} className="min-h-[44px] rounded-xl bg-slate-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 active:scale-[0.98] disabled:opacity-50">{actLabel('numbers', 'editPage.pageNumbers')}</button>
         </div>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500">{error}</p>}
+        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -199,7 +238,7 @@ export function EditPage() {
         <button disabled={!file || busy} onClick={() => apply('bates')} className="mt-2 min-h-[44px] w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
           {actLabel('bates', 'editPage.addBates')}
         </button>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500">{error}</p>}
+        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="grid gap-2 sm:grid-cols-2">
@@ -209,7 +248,7 @@ export function EditPage() {
         <button disabled={!file || busy} onClick={() => apply('meta')} className="mt-2 min-h-[44px] w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50 dark:bg-slate-700">
           {actLabel('meta', 'editPage.applyMeta')}
         </button>
-        {error && <p className="animate-enter mt-2 text-sm text-red-500">{error}</p>}
+        {error && <p className="animate-enter mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
       </div>
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="edited.pdf" />}
     </div>

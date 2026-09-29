@@ -4,7 +4,9 @@ import * as pdfjs from 'pdfjs-dist';
 import JSZip from 'jszip';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { downloadBytes, isTooBig } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -19,8 +21,8 @@ const MAX_PAGES = 50;
 export function Pdf2ImgPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
-  const [format, setFormat] = useState<'jpeg' | 'png'>('jpeg');
-  const [scale, setScale] = useState(2);
+  const [format, setFormat] = useState<'jpeg' | 'png'>(() => loadSetting('pdf2img.format', 'jpeg' as const));
+  const [scale, setScale] = useState(() => loadSetting('pdf2img.scale', 2));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
@@ -101,29 +103,32 @@ export function Pdf2ImgPage() {
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('convertPage.pdf2imgTitle')}</h1>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => pick(f[0])} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={() => { setFile(null); touch(); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
+        <FileChip
+          name={file.name}
+          meta={busy && progress ? `${progress[0]}/${progress[1]}` : undefined}
+          disabled={busy}
+          onRemove={() => { setFile(null); touch(); }}
+        />
       )}
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <span className="text-sm font-semibold">{t('convertPage.format')}:</span>
         {(['jpeg', 'png'] as const).map((f) => (
-          <button key={f} disabled={busy} aria-pressed={format === f} onClick={() => { setFormat(f); touch(); }} className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${format === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{f}</button>
+          <button key={f} disabled={busy} aria-pressed={format === f} onClick={() => { setFormat(f); saveSetting('pdf2img.format', f); touch(); }} className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${format === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{f}</button>
         ))}
         <span className="ml-2 text-sm font-semibold">{t('convertPage.scale')}:</span>
         {[1, 2, 3].map((s) => (
-          <button key={s} disabled={busy} aria-pressed={scale === s} onClick={() => { setScale(s); touch(); }} className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{s}x</button>
+          <button key={s} disabled={busy} aria-pressed={scale === s} onClick={() => { setScale(s); saveSetting('pdf2img.scale', s); touch(); }} className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{s}x</button>
         ))}
         <button onClick={run} disabled={!file || busy} className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 max-sm:w-full sm:ml-auto">
           {busy && progress ? `${t('processing')} ${progress[0]}/${progress[1]}` : busy ? t('processing') : t('convertPage.do')}
         </button>
         <p className="w-full text-xs text-slate-500">{t('convertPage.scaleHint')}</p>
+        {scale === 3 && <p className="animate-enter w-full text-xs font-medium text-amber-600 dark:text-amber-400">{t('convertPage.scaleWarn')}</p>}
       </div>
 
-      {truncated && <p className="text-sm text-amber-600">{t('convertPage.truncated', { n: MAX_PAGES })}</p>}
+      {truncated && <p className="text-sm text-amber-600 dark:text-amber-400">{t('convertPage.truncated', { n: MAX_PAGES })}</p>}
 
       {pages.length > 0 && (
         <>

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
+import { ProgressBar } from '../../components/ProgressBar';
 import { downloadBytes, isTooBig } from '../../lib/utils';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -56,15 +58,18 @@ export function Pdf2TextPage() {
         setFile(f0);
       }} />
       {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={() => { setFile(null); setText(''); setEmpty(false); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
+        <FileChip
+          name={file.name}
+          meta={busy && progress ? `${progress[0]}/${progress[1]}` : undefined}
+          disabled={busy}
+          onRemove={() => { setFile(null); setText(''); setEmpty(false); setError(null); }}
+        />
       )}
       <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
         {busy && progress ? `${t('processing')} ${progress[0]}/${progress[1]}` : busy ? t('processing') : t('convertPage.do')}
       </button>
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {busy && progress && <ProgressBar value={progress[0] / progress[1]} />}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {empty && <p className="animate-enter rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t('convertPage.noText')}</p>}
       {text && (
         <div className="animate-enter rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">

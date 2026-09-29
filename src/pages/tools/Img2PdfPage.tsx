@@ -7,6 +7,7 @@ import { ResultCard } from '../../components/ResultCard';
 import { imagesToPdf } from '../../features/pdf-core/pdfOps';
 import { getJpegOrientation, needsRotation } from '../../features/pdf-core/exif';
 import { isTooBig } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 
 function sniffKind(bytes: Uint8Array): 'png' | 'jpg' | 'unknown' {
   if (bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png';
@@ -90,7 +91,7 @@ async function fileToBytes(f: File): Promise<{ bytes: Uint8Array; mime: string }
 export function Img2PdfPage() {
   const { t } = useTranslation();
   const [files, setFiles] = useState<File[]>([]);
-  const [size, setSize] = useState<'fit' | 'a4'>('a4');
+  const [size, setSize] = useState<'fit' | 'a4'>(() => (loadSetting<'fit' | 'a4'>('img2pdf.size', 'a4') === 'fit' ? 'fit' : 'a4'));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -163,7 +164,7 @@ export function Img2PdfPage() {
       <FileList files={files} disabled={busy} onMove={move} onRemove={(i) => { setError(null); setNote(''); setResult(null); setFiles((p) => p.filter((_, x) => x !== i)); }} onClear={() => { setError(null); setNote(''); setFiles([]); setResult(null); }} />
       <div className="flex flex-wrap items-center gap-2">
         {(['fit', 'a4'] as const).map((s) => (
-          <button key={s} disabled={busy} aria-pressed={size === s} onClick={() => { setSize(s); setError(null); setResult(null); }} className={`min-h-[40px] rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${size === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+          <button key={s} disabled={busy} aria-pressed={size === s} onClick={() => { setSize(s); saveSetting('img2pdf.size', s); setError(null); setResult(null); }} className={`min-h-[40px] rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${size === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
             {t(`convertPage.${s}`) as string}
           </button>
         ))}
@@ -171,8 +172,8 @@ export function Img2PdfPage() {
           {busy ? t('processing') : t('convertPage.do')}
         </button>
       </div>
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
-      {note && <p className="animate-enter text-sm text-amber-600">{note}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {note && <p className="animate-enter text-sm text-amber-600 dark:text-amber-400">{note}</p>}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="images.pdf" />}
     </div>
   );

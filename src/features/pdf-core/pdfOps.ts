@@ -280,14 +280,22 @@ export async function fillForm(
   return src.save();
 }
 
-export async function placeSignature(bytes: Uint8Array, pngBytes: Uint8Array): Promise<Uint8Array> {
+export async function placeSignature(
+  bytes: Uint8Array,
+  pngBytes: Uint8Array,
+  opts?: { h?: 'left' | 'right'; v?: 'bottom' | 'top'; scale?: number }
+): Promise<Uint8Array> {
   const src = await loadPdf(bytes);
   const png = await src.embedPng(pngBytes);
   const pages = src.getPages();
   const last = pages[pages.length - 1];
-  const { width } = last.getSize();
-  const w = 180;
+  const { width, height } = last.getSize();
+  const k = opts?.scale ?? 1;
+  const w = 180 * k;
   const h = (png.height / png.width) * w;
-  last.drawImage(png, { x: width - w - 40, y: 60, width: w, height: h });
+  const margin = 40;
+  const x = (opts?.h ?? 'right') === 'right' ? width - w - margin : margin;
+  const y = (opts?.v ?? 'bottom') === 'bottom' ? 60 : height - h - 60;
+  last.drawImage(png, { x: Math.max(8, x), y: Math.max(8, y), width: w, height: h });
   return src.save();
 }

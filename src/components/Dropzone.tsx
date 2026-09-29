@@ -38,7 +38,7 @@ export function Dropzone({ accept, multiple = true, disabled = false, subtitleKe
       <UploadCloud className="mx-auto mb-2 h-9 w-9 text-indigo-500 sm:mb-3 sm:h-10 sm:w-10" />
       <p className="font-semibold">{t('dropTitle')}</p>
       <p className="mt-1 text-sm text-slate-500">{t(subtitleKey)}</p>
-      {rejected && <p className="mt-2 text-sm font-medium text-amber-600">{t('wrongType')}</p>}
+      {rejected && <p className="mt-2 text-sm font-medium text-amber-600 dark:text-amber-400">{t('wrongType')}</p>}
     </div>
   );
 }

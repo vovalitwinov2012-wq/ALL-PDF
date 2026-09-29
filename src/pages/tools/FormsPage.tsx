@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
 import { flattenPdf, getFormFields, fillForm, loadPdf, FormFieldInfo, FieldValue } from '../../features/pdf-core/pdfOps';
 import { isTooBig } from '../../lib/utils';
@@ -91,13 +92,8 @@ export function FormsPage() {
       <h1 className="text-2xl font-extrabold">{t('formsPage.title')}</h1>
       <p className="text-sm text-slate-500">{t('formsPage.hint')}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy || inspecting} subtitleKey="dropSubtitlePdf" onFiles={(f) => inspect(f[0])} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
-      {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={() => { setFile(null); setFields(null); setResult(null); setError(null); }} disabled={busy || inspecting} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
-      )}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {file && <FileChip name={file.name} disabled={busy || inspecting} onRemove={() => { setFile(null); setFields(null); setResult(null); setError(null); }} />}
       {inspecting && <div className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />}
 
       {fields !== null && fields.length === 0 && (

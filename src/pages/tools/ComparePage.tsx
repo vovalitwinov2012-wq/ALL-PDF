@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
-import { isTooBig } from '../../lib/utils';
+import { downloadBytes, isTooBig } from '../../lib/utils';
 import { diffLines, countChanges, DiffLine } from '../../features/pdf-core/diff';
 import { cn } from '../../lib/utils';
 
@@ -86,6 +86,24 @@ export function ComparePage() {
   const totalAdded = pages.reduce((s, p) => s + p.added, 0);
   const totalRemoved = pages.reduce((s, p) => s + p.removed, 0);
 
+  const downloadDiff = () => {
+    const lines: string[] = [
+      `# ${a?.name ?? 'A'} vs ${b?.name ?? 'B'}`,
+      t('compare.summary', { added: totalAdded, removed: totalRemoved }) as string,
+      ''
+    ];
+    pages.forEach((p, i) => {
+      const visible = p.diff.filter((l) => !hideSame || l.type !== 'same');
+      if (visible.length === 0) return;
+      lines.push(`## ${t('compare.page', { n: i + 1 })}`);
+      for (const l of visible) {
+        lines.push(`${l.type === 'add' ? '+' : l.type === 'del' ? '-' : ' '} ${l.text}`);
+      }
+      lines.push('');
+    });
+    downloadBytes(new TextEncoder().encode(lines.join('\n')), 'compare.md', 'text/markdown');
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <h1 className="text-2xl font-extrabold">{t('compare.title')}</h1>
@@ -119,21 +137,29 @@ export function ComparePage() {
           </label>
         )}
       </div>
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
-      {truncated && <p className="text-sm text-amber-600">{t('compare.truncated', { n: MAX_PAGES })}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {truncated && <p className="text-sm text-amber-600 dark:text-amber-400">{t('compare.truncated', { n: MAX_PAGES })}</p>}
       {busy && <div className="h-40 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />}
       {pages.length > 0 && (
         <div className="animate-enter rounded-2xl border bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
-          <p className="mb-3 font-semibold">
-            {t('compare.summary', { added: totalAdded, removed: totalRemoved })}
-          </p>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 font-semibold">
+              {t('compare.summary', { added: totalAdded, removed: totalRemoved })}
+            </p>
+            <button
+              onClick={downloadDiff}
+              className="min-h-[40px] rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-[0.98]"
+            >
+              {t('compare.export')}
+            </button>
+          </div>
           {pages.map((p, i) => {
             const visible = p.diff.filter((l) => !hideSame || l.type !== 'same');
             if (visible.length === 0) return null;
             return (
               <details key={i} className="mb-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800" open={p.added + p.removed > 0}>
                 <summary className="cursor-pointer py-1 font-semibold">
-                  {t('compare.page', { n: i + 1 })} · <span className="text-emerald-600">+{p.added}</span> <span className="text-red-500">−{p.removed}</span>
+                  {t('compare.page', { n: i + 1 })} · <span className="text-emerald-600 dark:text-emerald-400">+{p.added}</span> <span className="text-red-500 dark:text-red-400">−{p.removed}</span>
                 </summary>
                 <div className="thin-scroll mt-2 overflow-x-auto">
                   <div className="min-w-max space-y-0.5 pr-2 font-mono text-xs">

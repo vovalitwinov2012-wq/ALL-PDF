@@ -4,8 +4,10 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
 import { FileList } from '../../components/FileList';
+import { ProgressBar } from '../../components/ProgressBar';
 import { ResultCard } from '../../components/ResultCard';
 import { downloadBytes, isTooBig } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -52,23 +54,35 @@ async function pdfPagesToImages(file: File): Promise<Array<{ name: string; blob:
 export function OcrPage() {
   const { t } = useTranslation();
   const [files, setFiles] = useState<File[]>([]);
-  const [lang, setLang] = useState<'rus' | 'eng' | 'both'>('rus');
+  const [lang, setLang] = useState<'rus' | 'eng' | 'both'>(() => loadSetting('ocr.lang', 'rus' as const));
+  const [outMode, setOutMode] = useState<'txt' | 'pdf'>(() => loadSetting('ocr.outMode', 'txt' as const));
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<OcrResult[]>([]);
   const [pdfResult, setPdfResult] = useState<Uint8Array | null>(null);
-  const [outMode, setOutMode] = useState<'txt' | 'pdf'>('txt');
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [stopped, setStopped] = useState(false);
   const cancelRef = useRef(false);
+  const workerRef = useRef<{ terminate: () => Promise<unknown> } | null>(null);
+  const pdfPartsRef = useRef<Uint8Array[]>([]);
+  const doneRef = useRef(0);
+  const runKeyRef = useRef('');
 
   const clearResults = () => {
     setError(null);
     setNote('');
+    setStopped(false);
     setResults([]);
     setPdfResult(null);
+    pdfPartsRef.current = [];
+    doneRef.current = 0;
+    runKeyRef.current = '';
   };
+
+  const runKey = () =>
+    files.map((f) => `${f.name}:${f.size}`).join('|') + `#${lang}#${outMode}`;
 
   const add = (f: File[]) => {
     setError(null);
@@ -83,13 +97,22 @@ export function OcrPage() {
     setFiles(merged);
   };
 
-  const run = async () => {
-    setError(null);
-    setNote('');
-    setResults([]);
-    setPdfResult(null);
+  const run = async (resume = false) => {
     if (files.length === 0) return setError(t('needFiles') as string);
+    // Продолжение возможно только если файлы и настройки не менялись с остановки
+    const canResume = resume && stopped && runKeyRef.current === runKey() && (results.length > 0 || pdfPartsRef.current.length > 0);
+    // Порядок картинок детерминирован: пропускаем уже готовые
+    const startIdx = canResume ? results.length + pdfPartsRef.current.length : 0;
+    setError(null);
+    if (!canResume) {
+      setNote('');
+      setResults([]);
+      setPdfResult(null);
+      pdfPartsRef.current = [];
+    }
+    setStopped(false);
     cancelRef.current = false;
+    doneRef.current = canResume ? startIdx : 0;
     setBusy(true);
     setProgress(0);
     try {
@@ -98,15 +121,18 @@ export function OcrPage() {
       setStatus(t('ocr.loading') as string);
       const worker = await createWorker(langs, undefined, {
         logger: (m: { status: string; progress: number }) => {
+          if (cancelRef.current) return;
           if (m.status === 'recognizing text' && typeof m.progress === 'number') setProgress(m.progress);
           setStatus(mapStatus(t, m.status));
         }
       });
+      workerRef.current = worker;
 
       // Собираем картинки: фото напрямую, PDF постранично
       setStatus(t('ocr.preparing') as string);
       let images: Array<{ name: string; blob: Blob }> = [];
       for (const f of files.slice(0, MAX_OCR_PAGES)) {
+        if (cancelRef.current) break;
         if (isPdfFile(f)) {
           images.push(...(await pdfPagesToImages(f)));
         } else {
@@ -118,11 +144,12 @@ export function OcrPage() {
         setNote(t('ocr.capped', { n: MAX_IMAGES }) as string);
       }
 
-      const out: OcrResult[] = [];
-      const pdfParts: Uint8Array[] = [];
+      // При продолжении пропускаем уже готовые: порядок картинок детерминирован
+      const out: OcrResult[] = canResume ? [...results] : [];
+      const pdfParts: Uint8Array[] = canResume ? [...pdfPartsRef.current] : [];
       const wantPdf = outMode === 'pdf';
       try {
-        for (let i = 0; i < images.length; i++) {
+        for (let i = startIdx; i < images.length; i++) {
           if (cancelRef.current) break;
           setStatus(`${t('ocr.recognizing')} ${i + 1}/${images.length}`);
           const url = URL.createObjectURL(images[i].blob);
@@ -138,21 +165,56 @@ export function OcrPage() {
             URL.revokeObjectURL(url);
           }
           setResults([...out]);
+          pdfPartsRef.current = [...pdfParts];
+          doneRef.current = i + 1;
         }
       } finally {
-        await worker.terminate();
+        workerRef.current = null;
+        try {
+          await worker.terminate();
+        } catch {
+          // уже остановлен кнопкой «Отмена» — нормально
+        }
       }
-      if (wantPdf && !cancelRef.current) {
+      runKeyRef.current = runKey();
+      if (cancelRef.current) {
+        setStopped(true);
+        setStatus('');
+        return;
+      }
+      if (wantPdf) {
         if (pdfParts.length === 0) throw new Error('no-pdf');
         const { mergePdfs } = await import('../../features/pdf-core/pdfOps');
         setPdfResult(await mergePdfs(pdfParts));
       }
       setStatus('');
     } catch {
+      if (cancelRef.current) {
+        // Остановлено кнопкой: частичные результаты сохраняем, ошибку не показываем
+        runKeyRef.current = runKey();
+        setStopped(true);
+        setStatus('');
+        return;
+      }
+      runKeyRef.current = runKey();
+      // Частичные результаты уже на экране — предлагаем продолжить с места остановки
+      setStopped(doneRef.current > 0);
       setError(t('ocr.failed') as string);
     } finally {
       setBusy(false);
     }
+  };
+
+  const cancel = async () => {
+    cancelRef.current = true;
+    setStatus(t('ocr.cancelling') as string);
+    // Мгновенная остановка: убиваем воркер, recognize упадёт в catch выше
+    try {
+      await workerRef.current?.terminate();
+    } catch {
+      // воркер уже мёртв или ещё не создан
+    }
+    workerRef.current = null;
   };
 
   const downloadAll = () => {
@@ -170,7 +232,7 @@ export function OcrPage() {
         disabled={busy}
         onFiles={add}
       />
-      {note && <p className="animate-enter text-sm text-amber-600">{note}</p>}
+      {note && <p className="animate-enter text-sm text-amber-600 dark:text-amber-400">{note}</p>}
       <FileList files={files} disabled={busy} onRemove={(i) => { setFiles((p) => p.filter((_, x) => x !== i)); clearResults(); }} onClear={() => { setFiles([]); clearResults(); }} />
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -180,13 +242,13 @@ export function OcrPage() {
             key={l}
             disabled={busy}
             aria-pressed={lang === l}
-            onClick={() => { setLang(l); clearResults(); }}
+            onClick={() => { setLang(l); saveSetting('ocr.lang', l); clearResults(); }}
             className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${lang === l ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.${l}`) as string}
           </button>
         ))}
-        <button onClick={run} disabled={busy || files.length === 0} className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 max-sm:w-full sm:ml-auto">
+        <button onClick={() => run()} disabled={busy || files.length === 0} className="min-h-[40px] rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 max-sm:w-full sm:ml-auto">
           {busy ? t('processing') : t('ocr.do')}
         </button>
       </div>
@@ -197,7 +259,7 @@ export function OcrPage() {
             key={m}
             disabled={busy}
             aria-pressed={outMode === m}
-            onClick={() => { setOutMode(m); clearResults(); }}
+            onClick={() => { setOutMode(m); saveSetting('ocr.outMode', m); clearResults(); }}
             className={`min-h-[40px] rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${outMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
           >
             {t(`ocr.out_${m}`) as string}
@@ -207,16 +269,19 @@ export function OcrPage() {
 
       {busy && (
         <div className="animate-enter rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-            <div className={`h-full bg-indigo-500 transition-all ${progress === 0 ? 'w-1/4 animate-pulse' : ''}`} style={progress === 0 ? undefined : { width: `${Math.round(progress * 100)}%` }} />
-          </div>
+          <ProgressBar value={progress} />
           <div className="mt-2 flex items-center gap-2">
             <p className="min-w-0 flex-1 truncate text-xs text-slate-500">{status}</p>
-            <button onClick={() => { cancelRef.current = true; setStatus(t('ocr.cancelling') as string); }} className="min-h-[36px] shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold transition-colors dark:bg-slate-800">{t('ocr.cancel')}</button>
+            <button onClick={cancel} className="min-h-[36px] shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold transition-colors dark:bg-slate-800">{t('ocr.cancel')}</button>
           </div>
         </div>
       )}
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {stopped && !busy && (
+        <button onClick={() => run(true)} className="animate-enter min-h-[48px] w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-600 active:scale-[0.99]">
+          {t('ocr.resume')}
+        </button>
+      )}
       {pdfResult && <ResultCard title={t('ready') as string} bytes={pdfResult} fileName="searchable.pdf" />}
 
       {results.length > 0 && (

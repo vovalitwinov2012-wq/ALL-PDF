@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { downloadBytes, isTooBig } from '../../lib/utils';
 import { itemsToCsv, TextItem } from '../../features/pdf-core/tables';
 
@@ -56,12 +57,14 @@ export function TablesPage() {
       <h1 className="text-2xl font-extrabold">{t('tables.title')}</h1>
       <p className="text-sm text-slate-500">{t('tables.hint')}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => run(f[0])} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}{busy ? ` · ${t('processing')}` : ''}</span>
-          <button onClick={() => { setFile(null); setCsv(''); setEmpty(false); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
+        <FileChip
+          name={file.name}
+          meta={busy ? (t('processing') as string) : undefined}
+          disabled={busy}
+          onRemove={() => { setFile(null); setCsv(''); setEmpty(false); setError(null); }}
+        />
       )}
       {empty && <p className="animate-enter rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t('tables.empty')}</p>}
       {csv && (

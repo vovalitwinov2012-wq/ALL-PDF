@@ -58,6 +58,31 @@ canvas.pdf-page {
   animation: rise 0.18s ease-out;
 }
 
+/* Появление галочки успеха: лёгкий «поп» */
+@keyframes pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-pop {
+  animation: pop 0.25s ease-out;
+}
+
+/* Плавное раскрытие <details>: контент «въезжает» при открытии */
+details[open] > *:not(summary) {
+  animation: rise 0.18s ease-out;
+}
+
 /* Мобильный отклик: кнопки и ссылки «нажимаются», убираем задержку тапа */
 button,
 [role='button'] {
@@ -79,7 +104,11 @@ button,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-enter {
+  .animate-enter,
+  .animate-pop {
+    animation: none;
+  }
+  details[open] > *:not(summary) {
     animation: none;
   }
   button,

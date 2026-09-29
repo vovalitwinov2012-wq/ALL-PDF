@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
 import { sanitizePdf } from '../../features/pdf-core/pdfOps';
 import { qpdfEncrypt, qpdfDecrypt } from '../../features/pdf-core/qpdf';
 import { isTooBig } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 
 export function ProtectPage() {
   const { t } = useTranslation();
@@ -12,8 +14,8 @@ export function ProtectPage() {
   const [userPass, setUserPass] = useState('');
   const [ownerPass, setOwnerPass] = useState('');
   const [decPass, setDecPass] = useState('');
-  const [bits, setBits] = useState<128 | 256>(256);
-  const [restrict, setRestrict] = useState(true);
+  const [bits, setBits] = useState<128 | 256>(() => (loadSetting<number>('protect.bits', 256) === 128 ? 128 : 256));
+  const [restrict, setRestrict] = useState(() => loadSetting('protect.restrict', true));
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<'enc' | 'dec' | 'san' | null>(null);
   const [status, setStatus] = useState('');
@@ -110,12 +112,7 @@ export function ProtectPage() {
       <h1 className="text-2xl font-extrabold">{t('protectPage.title')}</h1>
       <p className="text-sm text-slate-500">{t('protectPage.hint')}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => pick(f[0])} />
-      {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={() => { setFile(null); setResult(null); setNote(''); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
-      )}
+      {file && <FileChip name={file.name} disabled={busy} onRemove={() => { setFile(null); setResult(null); setNote(''); setError(null); }} />}
 
       <div className="rounded-2xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-sm font-semibold">{t('protectPage.encryptTitle')}</p>
@@ -136,13 +133,13 @@ export function ProtectPage() {
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           <span className="font-semibold">AES-</span>
           {([128, 256] as const).map((b) => (
-            <button key={b} disabled={busy} aria-pressed={bits === b} onClick={() => { setBits(b); touch(); }}
+            <button key={b} disabled={busy} aria-pressed={bits === b} onClick={() => { setBits(b); saveSetting('protect.bits', b); touch(); }}
               className={`min-h-[40px] rounded-xl px-3 py-1.5 font-semibold transition-colors disabled:opacity-40 ${bits === b ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
               {b}
             </button>
           ))}
           <label className="ml-1 flex min-h-[44px] items-center gap-2">
-            <input type="checkbox" checked={restrict} onChange={(e) => { setRestrict(e.target.checked); touch(); }} className="h-5 w-5" />
+            <input type="checkbox" checked={restrict} onChange={(e) => { setRestrict(e.target.checked); saveSetting('protect.restrict', e.target.checked); touch(); }} className="h-5 w-5" />
             {t('protectPage.restrict')}
           </label>
         </div>
@@ -168,8 +165,8 @@ export function ProtectPage() {
         {busy && active === 'san' ? t('processing') : t('protectPage.sanitize')}
       </button>
 
-      {note && <p className="animate-enter text-sm text-amber-600">{note}</p>}
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {note && <p className="animate-enter text-sm text-amber-600 dark:text-amber-400">{note}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName={resultName} />}
     </div>
   );

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Search, Eye, Combine, Scissors, Layers, Archive, ImagePlus, Images, Type, ScanText, FileImage, PenLine, Shapes, Crop, Wrench, GitCompare, Table, ClipboardList, PenTool, ShieldCheck } from 'lucide-react';
+import { Search, Eye, Combine, Scissors, Layers, Archive, ImagePlus, Images, Type, ScanText, FileImage, PenLine, Shapes, Crop, Wrench, GitCompare, Table, ClipboardList, PenTool, ShieldCheck, ArrowRight } from 'lucide-react';
 
 const TOOLS = [
   { to: '/viewer', icon: Eye, key: 'viewer' },
@@ -75,7 +75,7 @@ export function Home() {
               </span>
               <p className="mt-3 font-bold">{t(`tools.${tool.key}.name`)}</p>
               <p className="mt-1 text-sm text-slate-500">{t(`tools.${tool.key}.desc`)}</p>
-              <p className="mt-3 text-sm font-semibold text-indigo-600 group-hover:underline">{t('openTool')} →</p>
+              <p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 group-hover:underline">{t('openTool')} <ArrowRight className="h-4 w-4" /></p>
             </Link>
           );
         })}

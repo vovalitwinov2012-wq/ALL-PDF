@@ -55,9 +55,9 @@ export function CompressPage() {
       <button onClick={run} disabled={!file || busy} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
         {busy ? t('processing') : t('compressPage.do')}
       </button>
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {file && result && result.length >= file.size && (
-        <p className="animate-enter text-sm text-amber-600">{t('compressPage.grew')}</p>
+        <p className="animate-enter text-sm text-amber-600 dark:text-amber-400">{t('compressPage.grew')}</p>
       )}
       {result && <ResultCard title={t('ready') as string} bytes={result} fileName="compressed.pdf" />}
     </div>

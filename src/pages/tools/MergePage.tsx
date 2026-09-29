@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Dropzone } from '../../components/Dropzone';
+import { ProgressBar } from '../../components/ProgressBar';
 import { ResultCard } from '../../components/ResultCard';
 import { assertLimits, formatBytes } from '../../lib/utils';
 import { loadPdf, mergePdfs, imagesToPdf } from '../../features/pdf-core/pdfOps';
@@ -26,6 +27,7 @@ export function MergePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
+  const [progress, setProgress] = useState<[number, number] | null>(null);
 
   const addFiles = async (added: File[]) => {
     setError(null);
@@ -71,13 +73,21 @@ export function MergePage() {
     if (items.length === 0) return setError(t('needFiles') as string);
     if (items.some((i) => i.pages === 0)) return setError(t('mergePage.badFile') as string);
     setBusy(true);
+    setProgress([0, items.length]);
     try {
+      let done = 0;
       const bufs = await Promise.all(
         items.map(async (i) => {
           const raw = new Uint8Array(await i.file.arrayBuffer());
-          if (i.kind === 'pdf') return raw;
-          const mime = i.file.type.includes('png') ? 'image/png' : 'image/jpeg';
-          return imagesToPdf([{ bytes: raw, mime }], 'fit');
+          let buf: Uint8Array;
+          if (i.kind === 'pdf') buf = raw;
+          else {
+            const mime = i.file.type.includes('png') ? 'image/png' : 'image/jpeg';
+            buf = await imagesToPdf([{ bytes: raw, mime }], 'fit');
+          }
+          done += 1;
+          setProgress([done, items.length]);
+          return buf;
         })
       );
       const ranges = items.map((i) => i.range.trim());
@@ -87,6 +97,7 @@ export function MergePage() {
       setError(t('mergePage.failed') as string);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -102,7 +113,7 @@ export function MergePage() {
             <span className="text-sm font-semibold">{t('files')} · {items.length}</span>
             <div className="flex items-center gap-1">
               {items.some((i) => i.pages === 0) && (
-                <button onClick={() => { setError(null); setResult(null); setItems((p) => p.filter((x) => x.pages !== 0)); }} className="rounded-lg px-2 py-1.5 text-xs font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40">{t('mergePage.removeBad')}</button>
+                <button onClick={() => { setError(null); setResult(null); setItems((p) => p.filter((x) => x.pages !== 0)); }} className="rounded-lg px-2 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40">{t('mergePage.removeBad')}</button>
               )}
               <button onClick={() => { setItems([]); setResult(null); setError(null); }} className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:text-red-500">{t('clear')}</button>
             </div>
@@ -144,9 +155,10 @@ export function MergePage() {
           </ul>
           <button onClick={run} disabled={busy || items.length === 0}
             className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-50">
-            {busy ? t('processing') : t('mergePage.doMerge')}
+            {busy && progress ? `${t('processing')} ${progress[0]}/${progress[1]}` : busy ? t('processing') : t('mergePage.doMerge')}
           </button>
-          {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+          {busy && progress && <ProgressBar value={progress[0] / progress[1]} />}
+          {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
         </div>
       )}
 

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FileText, Moon, Sun, Globe } from 'lucide-react';
 
 export function Layout() {
   const { t, i18n } = useTranslation();
+  const { pathname } = useLocation();
   const [dark, setDark] = useState(() => localStorage.getItem('allpdf-theme') === 'dark');
 
   useEffect(() => {
@@ -43,7 +44,9 @@ export function Layout() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <Outlet />
+        <div key={pathname} className="animate-enter">
+          <Outlet />
+        </div>
       </main>
       <footer className="border-t py-6 text-center text-xs text-slate-500 dark:border-slate-800">
         <div className="mb-2 flex items-center justify-center gap-4 text-sm sm:hidden">

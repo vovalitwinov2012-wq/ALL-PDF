@@ -4,7 +4,9 @@ import { Search } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { isTooBig } from '../../lib/utils';
+import { loadSetting, saveSetting } from '../../lib/settings';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -17,7 +19,10 @@ export function ViewerPage() {
   const [truncated, setTruncated] = useState(false);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<number[]>([]);
-  const [scale, setScale] = useState(1.5);
+  const [scale, setScale] = useState(() => {
+    const s = loadSetting('viewer.scale', 1.5);
+    return [1, 1.5, 2].includes(s) ? s : 1.5;
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,19 +80,14 @@ export function ViewerPage() {
       <h1 className="text-2xl font-extrabold">{t('viewerPage.title')}</h1>
       <p className="text-xs text-slate-500">{t('viewerPage.hint', { n: MAX_PAGES })}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => { if (f[0]) open(f[0]); }} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
-      {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}</span>
-          <button onClick={close} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
-      )}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {file && <FileChip name={file.name} disabled={busy} onRemove={close} />}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <input value={query} onChange={(e) => { setQuery(e.target.value); setHits([]); setError(null); }} placeholder={t('viewerPage.searchPh') as string}
           className="w-full min-w-0 rounded-xl border px-3 py-2.5 sm:flex-1 dark:border-slate-700 dark:bg-slate-900" />
         <div className="flex items-center gap-2">
           {[1, 1.5, 2].map((s) => (
-            <button key={s} onClick={() => { setScale(s); if (file) open(file, s); }} disabled={!file || busy} aria-pressed={scale === s}
+            <button key={s} onClick={() => { setScale(s); saveSetting('viewer.scale', s); if (file) open(file, s); }} disabled={!file || busy} aria-pressed={scale === s}
               className={`min-h-[40px] rounded-xl px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${scale === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
               {Math.round(s * 100)}%
             </button>
@@ -98,8 +98,8 @@ export function ViewerPage() {
           </button>
         </div>
       </div>
-      {hits.length > 0 && <p className="animate-enter text-sm text-emerald-600">{t('viewerPage.found')}: {hits.join(', ')}</p>}
-      {truncated && <p className="text-sm text-amber-600">{t('viewerPage.truncated', { n: MAX_PAGES })}</p>}
+      {hits.length > 0 && <p className="animate-enter text-sm text-emerald-600 dark:text-emerald-400">{t('viewerPage.found')}: {hits.join(', ')}</p>}
+      {truncated && <p className="text-sm text-amber-600 dark:text-amber-400">{t('viewerPage.truncated', { n: MAX_PAGES })}</p>}
       {busy && urls.length === 0 && (
         <div className="grid animate-pulse gap-4 sm:grid-cols-2">
           {[0, 1, 2, 3].map((i) => (
@@ -109,7 +109,7 @@ export function ViewerPage() {
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         {urls.map((u, i) => (
-          <figure key={i} className="animate-enter rounded-2xl border bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
+          <figure key={i} className="animate-enter content-auto rounded-2xl border bg-white p-2 [contain-intrinsic-size:auto_420px] dark:border-slate-800 dark:bg-slate-900">
             <img src={u} alt={`page ${i + 1}`} className="h-auto w-full max-w-full rounded-xl" loading="lazy" />
             <figcaption className="p-1 text-center text-xs text-slate-500">— {i + 1} —</figcaption>
           </figure>

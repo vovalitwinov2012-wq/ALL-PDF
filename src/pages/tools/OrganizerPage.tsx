@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -87,6 +87,11 @@ export function OrganizerPage() {
 
   const toggle = (i: number) => {
     setResult(null);
+    try {
+      navigator.vibrate?.(8);
+    } catch {
+      // нет вибромотора — молча пропускаем
+    }
     setSelected((p) => {
       const c = new Set(p);
       if (c.has(i)) c.delete(i);
@@ -111,8 +116,7 @@ export function OrganizerPage() {
     setThumbs((p) => p.map((th) => ({ ...th, deleted: false })));
   };
 
-  const moveCard = (e: React.MouseEvent, i: number, dir: -1 | 1) => {
-    e.stopPropagation();
+  const moveCard = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= thumbs.length) return;
     setResult(null);
@@ -121,6 +125,27 @@ export function OrganizerPage() {
       [copy[i], copy[j]] = [copy[j], copy[i]];
       return copy;
     });
+    try {
+      navigator.vibrate?.(10);
+    } catch {
+      // нет вибромотора — молча пропускаем
+    }
+  };
+
+  // Свайп по миниатюре: горизонтальный жест двигает страницу, тап — выбирает
+  const swipeX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    swipeX.current = e.touches[0].clientX;
+  };
+  const onTouchEnd = (e: React.TouchEvent, i: number) => {
+    if (swipeX.current === null || busy) {
+      swipeX.current = null;
+      return;
+    }
+    const dx = e.changedTouches[0].clientX - swipeX.current;
+    swipeX.current = null;
+    if (Math.abs(dx) < 48) return; // короткий жест — это был тап, его обработает onClick
+    moveCard(i, dx < 0 ? -1 : 1);
   };
 
   const drop = (to: number) => {
@@ -160,8 +185,8 @@ export function OrganizerPage() {
       <h1 className="text-2xl font-extrabold">{t('organizer.title')}</h1>
       <p className="text-sm text-slate-500">{t('organizer.hint')}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => open(f[0])} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
-      {truncated && <p className="text-sm text-amber-600">{t('organizer.truncated', { n: MAX_THUMBS })}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
+      {truncated && <p className="text-sm text-amber-600 dark:text-amber-400">{t('organizer.truncated', { n: MAX_THUMBS })}</p>}
       {thumbProgress && (
         <p className="animate-enter text-sm text-indigo-600 dark:text-indigo-400">
           {t('organizer.preparing', { done: thumbProgress[0], total: thumbProgress[1] })}
@@ -198,6 +223,8 @@ export function OrganizerPage() {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => drop(i)}
                 onClick={() => toggle(i)}
+                onTouchStart={onTouchStart}
+                onTouchEnd={(e) => onTouchEnd(e, i)}
                 className={cn(
                   'cursor-pointer rounded-xl border-2 bg-white p-1.5 transition dark:bg-slate-900',
                   selected.has(i) ? 'border-indigo-500' : 'border-transparent dark:border-slate-800',
@@ -217,8 +244,8 @@ export function OrganizerPage() {
                   {th.src + 1}{th.rot ? ` ⟳${th.rot}°` : ''}{th.deleted ? ` · ${t('organizer.deleted')}` : ''}
                 </p>
                 <div className="flex gap-1">
-                  <button onClick={(e) => moveCard(e, i, -1)} disabled={busy || i === 0} aria-label={t('moveUp') as string} className="grid min-h-[36px] flex-1 place-items-center rounded-lg bg-slate-100 text-base leading-none disabled:opacity-30 dark:bg-slate-800">‹</button>
-                  <button onClick={(e) => moveCard(e, i, 1)} disabled={busy || i === thumbs.length - 1} aria-label={t('moveDown') as string} className="grid min-h-[36px] flex-1 place-items-center rounded-lg bg-slate-100 text-base leading-none disabled:opacity-30 dark:bg-slate-800">›</button>
+                  <button onClick={(e) => { e.stopPropagation(); moveCard(i, -1); }} disabled={busy || i === 0} aria-label={t('moveUp') as string} className="grid min-h-[36px] flex-1 place-items-center rounded-lg bg-slate-100 text-base leading-none disabled:opacity-30 dark:bg-slate-800">‹</button>
+                  <button onClick={(e) => { e.stopPropagation(); moveCard(i, 1); }} disabled={busy || i === thumbs.length - 1} aria-label={t('moveDown') as string} className="grid min-h-[36px] flex-1 place-items-center rounded-lg bg-slate-100 text-base leading-none disabled:opacity-30 dark:bg-slate-800">›</button>
                 </div>
               </div>
             ))}

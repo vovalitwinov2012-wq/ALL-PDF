@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import JSZip from 'jszip';
 import { Dropzone } from '../../components/Dropzone';
+import { FileChip } from '../../components/FileChip';
 import { downloadBytes, formatBytes, isTooBig } from '../../lib/utils';
 import { extractImages, ExtractedImage } from '../../features/pdf-core/pages';
 
@@ -102,12 +103,14 @@ export function ImagesPage() {
       <h1 className="text-2xl font-extrabold">{t('images.title')}</h1>
       <p className="text-sm text-slate-500">{t('images.hint')}</p>
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy} subtitleKey="dropSubtitlePdf" onFiles={(f) => run(f[0])} />
-      {error && <p className="animate-enter text-sm text-red-500">{error}</p>}
+      {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
       {file && (
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
-          <span className="min-w-0 flex-1 truncate">📄 {file.name}{busy ? ` · ${t('processing')}` : ''}</span>
-          <button onClick={() => { setFile(null); resetFound(); setError(null); }} disabled={busy} aria-label={t('remove') as string} className="grid min-h-[36px] min-w-[36px] shrink-0 place-items-center rounded-lg text-slate-400 hover:text-red-500 disabled:opacity-30">✕</button>
-        </div>
+        <FileChip
+          name={file.name}
+          meta={busy ? (t('processing') as string) : undefined}
+          disabled={busy}
+          onRemove={() => { setFile(null); resetFound(); setError(null); }}
+        />
       )}
       {busy && (
         <div className="grid animate-pulse grid-cols-2 gap-3 sm:grid-cols-4">
