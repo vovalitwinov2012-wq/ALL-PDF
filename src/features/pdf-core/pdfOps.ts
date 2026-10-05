@@ -126,7 +126,8 @@ export async function stampText(
       });
     } else if (opts?.pageNumbers) {
       const label = `${text} ${i + 1} / ${pages.length}`;
-      p.drawText(label, { x: width / 2 - 50, y: 24, size: 11, font, color: rgb(0.3, 0.3, 0.35) });
+      const w = font.widthOfTextAtSize(label, 11);
+      p.drawText(label, { x: width / 2 - w / 2, y: 24, size: 11, font, color: rgb(0.3, 0.3, 0.35) });
     } else {
       p.drawText(text, { x: 48, y: height - 64, size: 16, font, color: rgb(0.1, 0.1, 0.12) });
     }

@@ -10,6 +10,7 @@ import { PdfOverlay, OverlayPageData } from '../../components/PdfOverlay';
 import { stampImages } from '../../features/pdf-core/pdfOps';
 import { loadPdf } from '../../features/pdf-core/pdfOps';
 import { isTooBig, downloadBytes } from '../../lib/utils';
+import { isRotatedPage } from '../../lib/pageGeom';
 import { loadSetting, saveSetting } from '../../lib/settings';
 import { cn } from '../../lib/utils';
 
@@ -87,6 +88,8 @@ function loadLibrary(): LibItem[] {
   for (const s of stored.slice(0, LIB_MAX_ITEMS)) {
     try {
       if (!s || typeof s.b64 !== 'string' || !s.b64) continue;
+      // Защита от подменённого localStorage: гигантский base64 грохнет atob() до проверки байтов
+      if (s.b64.length > (LIB_MAX_BYTES * 4) / 3 + 64) continue;
       const bytes = b64decode(s.b64);
       const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: 'image/png' }));
       out.push({
@@ -182,14 +185,53 @@ export function SignPage() {
   const [result, setResult] = useState<Uint8Array | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const dragRef = useRef<null | { pi: number; key: number; sx: number; sy: number; ofx: number; ofy: number }>(null);
+  const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
+
+  const dropDoc = async () => {
+    const d = docRef.current;
+    docRef.current = null;
+    if (d) {
+      try {
+        await d.destroy();
+      } catch {
+        // ignore
+      }
+    }
+  };
+  // Сохранение библиотеки — только с явного согласия (переключатель ниже)
+  const [saveLib, setSaveLibState] = useState(() => loadSetting('sign.saveLib', false));
+  const libRef = useRef<LibItem[]>([]);
+  libRef.current = library;
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Размонтирование — отозвать все object URL библиотеки
+  useEffect(() => {
+    const ref = libRef;
+    const docs = docRef;
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      ref.current.forEach((l) => URL.revokeObjectURL(l.url));
+      const d = docs.current;
+      docs.current = null;
+      if (d) d.destroy().catch(() => undefined);
+    };
+  }, []);
+
+  const setSaveLib = (v: boolean) => {
+    setSaveLibState(v);
+    saveSetting('sign.saveLib', v);
+    if (!v) saveSetting(LIB_KEY, []);
+  };
 
   const selected = library.find((l) => l.id === selectedId) ?? null;
   const placedCount = Object.values(placements).reduce((s, a) => s + a.length, 0);
 
-  // Библиотека переживает перезагрузку (мелкие PNG — в localStorage)
+  // Библиотека переживает перезагрузку только при включённом тумблере; пишем с дебаунсом
   useEffect(() => {
-    storeLibrary(library);
-  }, [library]);
+    if (!saveLib) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => storeLibrary(library), 500);
+  }, [library, saveLib]);
 
   // --- Рисование подписи ---
   const toCanvas = (e: React.PointerEvent) => {
@@ -319,11 +361,13 @@ export function SignPage() {
     setPlacements({});
     setSelPlacement(null);
     setLoading(true);
+    await dropDoc();
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
       const count = (await loadPdf(bytes)).getPageCount();
       setTotal(count);
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+      docRef.current = pdf;
       const n = Math.min(count, 30);
       const out: SignPageInfo[] = [];
       for (let p = 1; p <= n; p++) {
@@ -331,8 +375,7 @@ export function SignPage() {
         const wPt = pg.view[2] - pg.view[0];
         const hPt = pg.view[3] - pg.view[1];
         const v1 = pg.getViewport({ scale: 1 });
-        const rotated =
-          Math.abs(wPt - hPt) > 1 && Math.abs(v1.width - hPt) < 1 && Math.abs(v1.height - wPt) < 1;
+        const rotated = isRotatedPage(wPt, hPt, v1.width, v1.height);
         const scale = Math.min(1.5, 640 / wPt);
         const viewport = pg.getViewport({ scale });
         const canvas = document.createElement('canvas');
@@ -540,13 +583,17 @@ export function SignPage() {
         <input ref={pngInput} type="file" accept="image/png,image/*" className="hidden" onChange={(e) => { addPngToLibrary(e.target.files?.[0]); e.target.value = ''; }} />
         <div className="mt-3">{libCard('stamp')}</div>
         <p className="mt-2 text-[11px] text-slate-400">{t('signPage.libraryNote')}</p>
+        <label className="mt-2 flex min-h-[40px] cursor-pointer items-center gap-2 text-xs text-slate-500">
+          <input type="checkbox" checked={saveLib} onChange={(e) => setSaveLib(e.target.checked)} className="h-5 w-5" />
+          {t('signPage.saveLib')}
+        </label>
       </div>
 
       {warn && <p className="animate-enter text-sm text-amber-600 dark:text-amber-400">{warn}</p>}
 
       <Dropzone accept={{ 'application/pdf': ['.pdf'] }} multiple={false} disabled={busy || loading} subtitleKey="dropSubtitlePdf" onFiles={(f) => pickFile(f[0])} />
       {error && <p className="animate-enter text-sm text-red-500 dark:text-red-400">{error}</p>}
-      {file && <FileChip name={file.name} meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined} disabled={busy} onRemove={() => { setFile(null); setPages([]); setTotal(0); setPlacements({}); setSelPlacement(null); setResult(null); setError(null); setOverlayOpen(false); }} />}
+      {file && <FileChip name={file.name} meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined} disabled={busy} onRemove={() => { setFile(null); setPages([]); setTotal(0); setPlacements({}); setSelPlacement(null); setResult(null); setError(null); setOverlayOpen(false); void dropDoc(); }} />}
       {total > pages.length && pages.length > 0 && (
         <p className="text-sm text-amber-600 dark:text-amber-400">{t('signPage.cappedNote', { shown: pages.length, total })}</p>
       )}

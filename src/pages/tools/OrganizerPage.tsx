@@ -61,21 +61,25 @@ export function OrganizerPage() {
       const n = Math.min(doc.getPageCount(), MAX_THUMBS);
       setTruncated(doc.getPageCount() > MAX_THUMBS);
       const pdf = await pdfjs.getDocument({ data: data.slice() }).promise;
-      setThumbProgress([0, n]);
-      const out: Thumb[] = [];
-      for (let p = 1; p <= n; p++) {
-        const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale: 0.45 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        out.push({ src: p - 1, rot: 0, deleted: false, url: canvas.toDataURL('image/jpeg', 0.7) });
-        setThumbProgress([p, n]);
+      try {
+        setThumbProgress([0, n]);
+        const out: Thumb[] = [];
+        for (let p = 1; p <= n; p++) {
+          const page = await pdf.getPage(p);
+          const viewport = page.getViewport({ scale: 0.45 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+          out.push({ src: p - 1, rot: 0, deleted: false, url: canvas.toDataURL('image/jpeg', 0.7) });
+          setThumbProgress([p, n]);
+        }
+        setFile(f);
+        setBytes(data);
+        setThumbs(out);
+      } finally {
+        await pdf.destroy().catch(() => undefined);
       }
-      setFile(f);
-      setBytes(data);
-      setThumbs(out);
     } catch {
       resetDoc();
       setError(t('failed') as string);

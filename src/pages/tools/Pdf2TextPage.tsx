@@ -26,18 +26,22 @@ export function Pdf2TextPage() {
     try {
       const buf = await file.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
-      let out = '';
-      setProgress([0, pdf.numPages]);
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const content = await page.getTextContent();
-        const text = content.items.map((it: unknown) => (it as { str: string }).str).join(' ').trim();
-        if (text) out += (out ? '\n\n' : '') + text;
-        setProgress([p, pdf.numPages]);
+      try {
+        let out = '';
+        setProgress([0, pdf.numPages]);
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          const text = content.items.map((it: unknown) => (it as { str: string }).str).join(' ').trim();
+          if (text) out += (out ? '\n\n' : '') + text;
+          setProgress([p, pdf.numPages]);
+        }
+        const trimmed = out.trim();
+        setText(trimmed);
+        if (!trimmed) setEmpty(true);
+      } finally {
+        await pdf.destroy().catch(() => undefined);
       }
-      const trimmed = out.trim();
-      setText(trimmed);
-      if (!trimmed) setEmpty(true);
     } catch {
       setError(t('failed') as string);
     } finally {

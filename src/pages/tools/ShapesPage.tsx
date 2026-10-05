@@ -87,16 +87,17 @@ export function ShapesPage() {
   const renderPage = async (data: Uint8Array, idx: number, z = 1) => {
     const seq = ++navSeq.current;
     const pdf = await pdfjs.getDocument({ data: data.slice() }).promise;
-    const pg = await pdf.getPage(idx + 1);
-    const v1 = pg.getViewport({ scale: 1 });
-    const scale = Math.min(2, 760 / v1.width) * z;
-    const viewport = pg.getViewport({ scale });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-    if (navSeq.current !== seq) return; // пока рендерилось, ушли на другую страницу
-    setImg(canvas.toDataURL('image/jpeg', 0.85));
+    try {
+      const pg = await pdf.getPage(idx + 1);
+      const v1 = pg.getViewport({ scale: 1 });
+      const scale = Math.min(2, 760 / v1.width) * z;
+      const viewport = pg.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      if (navSeq.current !== seq) return; // пока рендерилось, ушли на другую страницу
+      setImg(canvas.toDataURL('image/jpeg', 0.85));
     setVp({
       w: canvas.width,
       h: canvas.height,
@@ -109,6 +110,9 @@ export function ShapesPage() {
         return [p[0], p[1]];
       }
     });
+    } finally {
+      await pdf.destroy().catch(() => undefined);
+    }
   };
 
   const open = async (f: File | undefined) => {

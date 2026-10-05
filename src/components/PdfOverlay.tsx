@@ -67,7 +67,9 @@ export function PdfOverlay({ title, pages, toolbar, headerActions, noTextHint, o
     setMatchIdx(0);
   }, [applied]);
 
-  // Первый Enter: скроллим к первому совпадению уже после отрисовки подсветки
+  // Первый Enter: скроллим к первому совпадению уже после отрисовки подсветки.
+  // firstKey — чтобы эффект срабатывал и когда страницы приехали позже запроса.
+  const firstKey = matches.length > 0 ? `${matches[0].page}:${matches[0].word}` : '';
   useEffect(() => {
     if (!applied.trim() || matches.length === 0) return;
     const m = matches[0];
@@ -75,8 +77,7 @@ export function PdfOverlay({ title, pages, toolbar, headerActions, noTextHint, o
     requestAnimationFrame(() => {
       matchRefs.current.get(`${m.page}:${m.word}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied]);
+  }, [applied, firstKey]);
 
   // Блокируем скролл страницы под окном; Escape в поле ввода — только снять фокус
   useEffect(() => {
@@ -171,8 +172,8 @@ export function PdfOverlay({ title, pages, toolbar, headerActions, noTextHint, o
             {matches.length > 0 && (
               <>
                 <span className="shrink-0 text-xs text-slate-300">{matchIdx + 1}/{matches.length}</span>
-                <button onClick={() => gotoMatch(matchIdx - 1)} aria-label="↑" className="grid min-h-[40px] min-w-[40px] place-items-center rounded-xl hover:bg-white/10 text-white"><ChevronUp className="h-5 w-5" /></button>
-                <button onClick={() => gotoMatch(matchIdx + 1)} aria-label="↓" className="grid min-h-[40px] min-w-[40px] place-items-center rounded-xl hover:bg-white/10 text-white"><ChevronDown className="h-5 w-5" /></button>
+                <button onClick={() => gotoMatch(matchIdx - 1)} aria-label={t('overlay.prevMatch') as string} className="grid min-h-[40px] min-w-[40px] place-items-center rounded-xl hover:bg-white/10 text-white"><ChevronUp className="h-5 w-5" /></button>
+                <button onClick={() => gotoMatch(matchIdx + 1)} aria-label={t('overlay.nextMatch') as string} className="grid min-h-[40px] min-w-[40px] place-items-center rounded-xl hover:bg-white/10 text-white"><ChevronDown className="h-5 w-5" /></button>
               </>
             )}
           </div>

@@ -216,7 +216,8 @@
     "uploadStamp": "Upload stamp PNG",
     "toLibrary": "To library",
     "emptyKind": "Empty for now.",
-    "libraryNote": "The library is stored in this browser (small PNGs survive reload). PNGs with transparent background blend cleanly.",
+    "libraryNote": "Small PNGs can be kept in this browser — only if you enable the toggle below. PNGs with transparent background blend cleanly.",
+    "saveLib": "Remember the library in this browser",
     "openViewer": "Open PDF and arrange",
     "placed": "Placed: {{n}}",
     "tapPlaceHint": "Tap to place “{{name}}”, drag the picture to move.",
@@ -256,7 +257,9 @@
     "noMatches": "Nothing found.",
     "noText": "No text layer — looks like a scan.",
     "openOcr": "Recognize in OCR",
-    "zoom": "Zoom"
+    "zoom": "Zoom",
+    "prevMatch": "Previous match",
+    "nextMatch": "Next match"
   },
   "viewerPage": {
     "title": "View PDF",

@@ -27,6 +27,17 @@ const POSITIONS: Array<{ h: H; v: V }> = [
   { h: 'left', v: 'bottom' }, { h: 'center', v: 'bottom' }, { h: 'right', v: 'bottom' }
 ];
 
+// null — ввод непонятен или номер вне диапазона: молча штамповать весь документ нельзя.
+// Чистая функция отдельно от компонента — ради тестов.
+export function parseStampPages(page: string, allPages: boolean, pageCount: number | null): number[] | 'all' | null {
+  if (allPages) return 'all';
+  if (!pageCount) return null;
+  if (page.trim() === '') return null;
+  const n = parseInt(page, 10);
+  if (!Number.isFinite(n) || n < 1 || n > pageCount) return null;
+  return [n - 1];
+}
+
 export function EditPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
@@ -96,21 +107,25 @@ export function EditPage() {
       setPageCount(doc.getPageCount());
       // Страницы для окна: тап ставит штамп прямо в нужное место
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
-      const n = Math.min(doc.getPageCount(), 30);
-      const out: OverlayPageData[] = [];
-      for (let p = 1; p <= n; p++) {
+      try {
+        const n = Math.min(doc.getPageCount(), 30);
+        const out: OverlayPageData[] = [];
+        for (let p = 1; p <= n; p++) {
+          if (openSeq.current !== seq) return;
+          const pg = await pdf.getPage(p);
+          const viewport = pg.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+          const words = await wordsToFractions(pg, viewport, canvas.width, canvas.height);
+          out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words, label: `page ${p}` });
+        }
         if (openSeq.current !== seq) return;
-        const pg = await pdf.getPage(p);
-        const viewport = pg.getViewport({ scale: 1.5 });
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        await pg.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        const words = await wordsToFractions(pg, viewport, canvas.width, canvas.height);
-        out.push({ url: canvas.toDataURL('image/jpeg', 0.8), aspect: canvas.width / canvas.height, words, label: `page ${p}` });
+        setOverlayPages(out);
+      } finally {
+        await pdf.destroy().catch(() => undefined);
       }
-      if (openSeq.current !== seq) return;
-      setOverlayPages(out);
     } catch {
       if (openSeq.current !== seq) return;
       setPageCount(null);
@@ -128,14 +143,7 @@ export function EditPage() {
   };
 
   // null — ввод непонятен или номер вне диапазона: молча штамповать весь документ нельзя
-  const parsePages = (): number[] | 'all' | null => {
-    if (allPages) return 'all';
-    if (!pageCount) return null;
-    if (page.trim() === '') return null;
-    const n = parseInt(page, 10);
-    if (!Number.isFinite(n) || n < 1 || n > pageCount) return null;
-    return [n - 1];
-  };
+  const parsePages = (): number[] | 'all' | null => parseStampPages(page, allPages, pageCount);
 
   const apply = async (kind: 'stamp' | 'watermark' | 'numbers' | 'meta' | 'bates') => {
     if (!file) return;

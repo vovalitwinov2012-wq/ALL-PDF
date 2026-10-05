@@ -112,29 +112,34 @@ interface BuiltSide extends CmpSide {
 async function renderSidePages(file: File): Promise<{ sides: BuiltSide[]; total: number }> {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buf }).promise;
-  const total = pdf.numPages;
-  const n = Math.min(total, MAX_PAGES);
-  const sides: BuiltSide[] = [];
-  for (let p = 1; p <= n; p++) {
-    const page = await pdf.getPage(p);
-    const viewport = page.getViewport({ scale: RENDER_SCALE });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-    const url = canvas.toDataURL('image/jpeg', 0.82);
-    const lines = await textLines(page, viewport, canvas.width, canvas.height);
-    sides.push({
-      url,
-      aspect: canvas.width / canvas.height,
-      lines: lines.map((l) => ({ ...l, kind: 'same' as const })),
-      ocr: false,
-      texts: lines.map((l) => l.text),
-      imgW: canvas.width,
-      imgH: canvas.height
-    });
+  try {
+    const total = pdf.numPages;
+    const n = Math.min(total, MAX_PAGES);
+    const sides: BuiltSide[] = [];
+    for (let p = 1; p <= n; p++) {
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: RENDER_SCALE });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      const url = canvas.toDataURL('image/jpeg', 0.82);
+      const lines = await textLines(page, viewport, canvas.width, canvas.height);
+      sides.push({
+        url,
+        aspect: canvas.width / canvas.height,
+        lines: lines.map((l) => ({ ...l, kind: 'same' as const })),
+        ocr: false,
+        texts: lines.map((l) => l.text),
+        imgW: canvas.width,
+        imgH: canvas.height
+      });
+    }
+    return { sides, total };
+  } finally {
+    // Рендер забрали в картинки — документ pdf.js больше не нужен
+    await pdf.destroy().catch(() => undefined);
   }
-  return { sides, total };
 }
 
 export function ComparePage() {
@@ -193,9 +198,12 @@ export function ComparePage() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const lines = await ocrLines(ocrWorker as any, s.url, s.imgW, s.imgH);
             if (lines.length > 0) {
-              s.lines = lines.map((l) => ({ ...l, kind: 'same' as const }));
-              s.texts = lines.map((l) => l.text);
-              s.ocr = true;
+              sides[i] = {
+                ...s,
+                lines: lines.map((l) => ({ ...l, kind: 'same' as const })),
+                texts: lines.map((l) => l.text),
+                ocr: true
+              };
             }
           }
         }

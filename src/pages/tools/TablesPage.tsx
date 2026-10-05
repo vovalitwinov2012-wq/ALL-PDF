@@ -32,19 +32,23 @@ export function TablesPage() {
     setBusy(true);
     try {
       const pdf = await pdfjs.getDocument({ data: await f.arrayBuffer() }).promise;
-      const parts: string[] = [];
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p);
-        const content = await page.getTextContent();
-        const items: TextItem[] = (content.items as Array<{ str: string; transform: number[] }>)
-          .filter((it) => it.str.trim())
-          .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5] }));
-        const table = itemsToCsv(items);
-        if (table.trim()) parts.push(`${t('tables.pageMark', { n: p })}\n${table}`);
+      try {
+        const parts: string[] = [];
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          const items: TextItem[] = (content.items as Array<{ str: string; transform: number[] }>)
+            .filter((it) => it.str.trim())
+            .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5] }));
+          const table = itemsToCsv(items);
+          if (table.trim()) parts.push(`${t('tables.pageMark', { n: p })}\n${table}`);
+        }
+        const out = parts.join('\n\n');
+        setCsv(out);
+        if (!out) setEmpty(true);
+      } finally {
+        await pdf.destroy().catch(() => undefined);
       }
-      const out = parts.join('\n\n');
-      setCsv(out);
-      if (!out) setEmpty(true);
     } catch {
       setError(t('failed') as string);
     } finally {

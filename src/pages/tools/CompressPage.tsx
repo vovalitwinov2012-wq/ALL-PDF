@@ -33,13 +33,17 @@ function paramsFor(strength: number): { quality: number; maxDim: number; pngToJp
 async function renderFirstPage(bytes: Uint8Array): Promise<string | null> {
   try {
     const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1 });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-    return canvas.toDataURL('image/jpeg', 0.8);
+    try {
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      return canvas.toDataURL('image/jpeg', 0.8);
+    } finally {
+      await pdf.destroy().catch(() => undefined);
+    }
   } catch {
     return null;
   }

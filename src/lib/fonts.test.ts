@@ -10,6 +10,10 @@ describe('needsUnicodeFont', () => {
     expect(needsUnicodeFont('ALL PDF 123')).toBe(false);
     expect(needsUnicodeFont('Café naïve')).toBe(false);
   });
+  it('граница Latin-1: ÿ — латиница, Ā — уже юникод', () => {
+    expect(needsUnicodeFont('ÿ')).toBe(false);
+    expect(needsUnicodeFont('Ā')).toBe(true);
+  });
   it('кириллица и прочее — юникод-шрифт', () => {
     expect(needsUnicodeFont('СОГЛАСОВАНО')).toBe(true);
     expect(needsUnicodeFont('Hello, мир!')).toBe(true);

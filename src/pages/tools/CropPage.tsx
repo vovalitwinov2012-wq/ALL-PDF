@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -8,6 +8,7 @@ import { FileChip } from '../../components/FileChip';
 import { ResultCard } from '../../components/ResultCard';
 import { PdfOverlay, OverlayPageData } from '../../components/PdfOverlay';
 import { isTooBig } from '../../lib/utils';
+import { isRotatedPage } from '../../lib/pageGeom';
 import { loadPdf } from '../../features/pdf-core/pdfOps';
 import { cropPdf } from '../../features/pdf-core/pages';
 import { CropMargins } from '../../features/pdf-core/pages';
@@ -18,7 +19,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const DEFAULT_M: CropMargins = { top: 36, right: 36, bottom: 36, left: 36 };
 const MIN_KEPT = 20;
 
-interface CropPage extends OverlayPageData {
+interface CropPageInfo extends OverlayPageData {
   wPt: number;
   hPt: number;
   rotated: boolean;
@@ -98,7 +99,7 @@ function CropFrame({ m, wPt, hPt, onChange }: {
 export function CropPage() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
-  const [pages, setPages] = useState<CropPage[]>([]);
+  const [pages, setPages] = useState<CropPageInfo[]>([]);
   const [total, setTotal] = useState(0);
   const [margins, setMargins] = useState<Record<number, CropMargins>>({});
   const [active, setActive] = useState(0);
@@ -107,6 +108,24 @@ export function CropPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Uint8Array | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
+
+  const dropDoc = async () => {
+    const d = docRef.current;
+    docRef.current = null;
+    if (d) {
+      try {
+        await d.destroy();
+      } catch {
+        // ignore
+      }
+    }
+  };
+  useEffect(() => () => {
+    const d = docRef.current;
+    docRef.current = null;
+    if (d) d.destroy().catch(() => undefined);
+  }, []);
 
   const m: CropMargins = margins[active] ?? DEFAULT_M;
 
@@ -139,13 +158,15 @@ export function CropPage() {
     setMargins({});
     setActive(0);
     setChecking(true);
+    await dropDoc();
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
       const count = (await loadPdf(bytes)).getPageCount();
       setTotal(count);
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+      docRef.current = pdf;
       const n = Math.min(count, 30);
-      const out: CropPage[] = [];
+      const out: CropPageInfo[] = [];
       const mm: Record<number, CropMargins> = {};
       for (let p = 1; p <= n; p++) {
         const pg = await pdf.getPage(p);
@@ -154,8 +175,7 @@ export function CropPage() {
         // Повёрнутые страницы рендерятся транспонированными — рамка совпадает
         // с картинкой, но вжигание идёт в неповёрнутых координатах: предупреждаем.
         const v1 = pg.getViewport({ scale: 1 });
-        const rotated =
-          Math.abs(wPt - hPt) > 1 && Math.abs(v1.width - hPt) < 1 && Math.abs(v1.height - wPt) < 1;
+        const rotated = isRotatedPage(wPt, hPt, v1.width, v1.height);
         const scale = Math.min(1.2, 560 / wPt);
         const viewport = pg.getViewport({ scale });
         const canvas = document.createElement('canvas');
@@ -238,7 +258,7 @@ export function CropPage() {
           name={file.name}
           meta={pages.length > 0 ? `${pages.length} ${t('pagesShort')}` : undefined}
           disabled={busy}
-          onRemove={() => { setFile(null); setPages([]); setTotal(0); setMargins({}); setResult(null); setError(null); setOverlayOpen(false); }}
+          onRemove={() => { setFile(null); setPages([]); setTotal(0); setMargins({}); setResult(null); setError(null); setOverlayOpen(false); void dropDoc(); }}
         />
       )}
       {total > pages.length && pages.length > 0 && (

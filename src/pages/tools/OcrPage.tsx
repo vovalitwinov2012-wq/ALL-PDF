@@ -34,21 +34,25 @@ function mapStatus(t: (k: string) => unknown, s: string): string {
 async function pdfPagesToImages(file: File): Promise<Array<{ name: string; blob: Blob }>> {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buf }).promise;
-  const n = Math.min(pdf.numPages, MAX_OCR_PAGES);
-  const out: Array<{ name: string; blob: Blob }> = [];
-  for (let p = 1; p <= n; p++) {
-    const page = await pdf.getPage(p);
-    const viewport = page.getViewport({ scale: 2 });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-    const blob: Blob = await new Promise((res, rej) =>
-      canvas.toBlob((b) => (b ? res(b) : rej(new Error('canvas-empty'))), 'image/png')
-    );
-    out.push({ name: `${file.name} — стр. ${p}`, blob });
+  try {
+    const n = Math.min(pdf.numPages, MAX_OCR_PAGES);
+    const out: Array<{ name: string; blob: Blob }> = [];
+    for (let p = 1; p <= n; p++) {
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      const blob: Blob = await new Promise((res, rej) =>
+        canvas.toBlob((b) => (b ? res(b) : rej(new Error('canvas-empty'))), 'image/png')
+      );
+      out.push({ name: `${file.name} — стр. ${p}`, blob });
+    }
+    return out;
+  } finally {
+    await pdf.destroy().catch(() => undefined);
   }
-  return out;
 }
 
 export function OcrPage() {

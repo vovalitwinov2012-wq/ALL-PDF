@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen } from 'lucide-react';
@@ -27,6 +27,25 @@ export function ViewerPage() {
   const [error, setError] = useState<string | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const openSeq = useRef(0);
+  const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
+
+  // Воркер и страницы pdf.js не освобождаются сами — убиваем прошлый документ
+  const dropDoc = async () => {
+    const d = docRef.current;
+    docRef.current = null;
+    if (d) {
+      try {
+        await d.destroy();
+      } catch {
+        // уже мёртв — нормально
+      }
+    }
+  };
+  useEffect(() => () => {
+    const d = docRef.current;
+    docRef.current = null;
+    if (d) d.destroy().catch(() => undefined);
+  }, []);
 
   const open = async (f: File | undefined) => {
     if (!f) return;
@@ -36,6 +55,7 @@ export function ViewerPage() {
       return setError(t('fileTooBig') as string);
     }
     const seq = ++openSeq.current;
+    await dropDoc();
     setFile(f);
     setBusy(true);
     setError(null);
@@ -43,7 +63,15 @@ export function ViewerPage() {
     try {
       const buf = await f.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
-      if (openSeq.current !== seq) return; // пока грузился, файл убрали или выбрали другой
+      if (openSeq.current !== seq) {
+        try {
+          await pdf.destroy(); // чужой документ: прилетел после отмены
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      docRef.current = pdf;
       const n = Math.min(pdf.numPages, MAX_PAGES);
       setTruncated(pdf.numPages > MAX_PAGES);
       setProgress([0, n]);
@@ -82,6 +110,7 @@ export function ViewerPage() {
 
   const close = () => {
     openSeq.current++; // отменяем летящую загрузку: призраков не будет
+    void dropDoc();
     setBusy(false);
     setProgress(null);
     setFile(null);

@@ -86,20 +86,24 @@ export function SplitPage() {
       const keepSet = new Set(idx);
       const n = Math.min(count, MAX_PREVIEW_THUMBS);
       const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
-      const thumbs: PreviewThumb[] = [];
-      for (let p = 1; p <= n; p++) {
-        const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale: 0.5 });
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        const kept = mode === 'rotate' ? true : mode === 'extract' ? keepSet.has(p - 1) : !keepSet.has(p - 1);
-        thumbs.push({ url: canvas.toDataURL('image/jpeg', 0.7), n: p, kept, rotated: mode === 'rotate' });
+      try {
+        const thumbs: PreviewThumb[] = [];
+        for (let p = 1; p <= n; p++) {
+          const page = await pdf.getPage(p);
+          const viewport = page.getViewport({ scale: 0.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+          const kept = mode === 'rotate' ? true : mode === 'extract' ? keepSet.has(p - 1) : !keepSet.has(p - 1);
+          thumbs.push({ url: canvas.toDataURL('image/jpeg', 0.7), n: p, kept, rotated: mode === 'rotate' });
+        }
+        const keptCount = mode === 'rotate' ? count : mode === 'extract' ? idx.length : count - idx.length;
+        setPreview({ thumbs, parts: [], keptCount, total: count });
+        setChecked(true);
+      } finally {
+        await pdf.destroy().catch(() => undefined);
       }
-      const keptCount = mode === 'rotate' ? count : mode === 'extract' ? idx.length : count - idx.length;
-      setPreview({ thumbs, parts: [], keptCount, total: count });
-      setChecked(true);
     } catch {
       setError(t('failed') as string);
     } finally {

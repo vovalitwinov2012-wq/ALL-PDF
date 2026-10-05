@@ -57,26 +57,30 @@ export function Pdf2ImgPage() {
     try {
       const buf = await file.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: buf }).promise;
-      const n = Math.min(pdf.numPages, MAX_PAGES);
-      setTruncated(pdf.numPages > MAX_PAGES);
-      const ext = format === 'png' ? 'png' : 'jpg';
-      const mime = format === 'png' ? 'image/png' : 'image/jpeg';
-      const out: RenderedPage[] = [];
-      setProgress([0, n]);
-      for (let p = 1; p <= n; p++) {
-        const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-        const blob: Blob = await new Promise((res, rej) =>
-          canvas.toBlob((b) => (b ? res(b) : rej(new Error('canvas-empty'))), mime, 0.92)
-        );
-        const name = `${file.name.replace(/\.pdf$/i, '')}-p${p}.${ext}`;
-        out.push({ blob, url: URL.createObjectURL(blob), name });
-        setPages([...out]);
-        setProgress([p, n]);
+      try {
+        const n = Math.min(pdf.numPages, MAX_PAGES);
+        setTruncated(pdf.numPages > MAX_PAGES);
+        const ext = format === 'png' ? 'png' : 'jpg';
+        const mime = format === 'png' ? 'image/png' : 'image/jpeg';
+        const out: RenderedPage[] = [];
+        setProgress([0, n]);
+        for (let p = 1; p <= n; p++) {
+          const page = await pdf.getPage(p);
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+          const blob: Blob = await new Promise((res, rej) =>
+            canvas.toBlob((b) => (b ? res(b) : rej(new Error('canvas-empty'))), mime, 0.92)
+          );
+          const name = `${file.name.replace(/\.pdf$/i, '')}-p${p}.${ext}`;
+          out.push({ blob, url: URL.createObjectURL(blob), name });
+          setPages([...out]);
+          setProgress([p, n]);
+        }
+      } finally {
+        await pdf.destroy().catch(() => undefined);
       }
     } catch {
       setError(t('failed') as string);
